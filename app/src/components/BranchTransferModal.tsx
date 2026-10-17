@@ -54,7 +54,9 @@ export function BranchTransferModal({
 
   // Products catalog query
   const productsQuery = trpc.inventory.list.useQuery();
-  const allProducts = productsQuery.data ?? [];
+  const allProducts = React.useMemo(() => {
+    return (productsQuery.data ?? []).filter((p) => session?.role === "admin" || !p.isHidden);
+  }, [productsQuery.data, session?.role]);
 
   // Transfers query
   const transfersQuery = trpc.inventory.listTransfers.useQuery();

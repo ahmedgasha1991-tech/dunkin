@@ -66,6 +66,7 @@ let memoryProducts: Product[] = seedProducts.map((p, index) => ({
   unitLabel: p.unit_label,
   imageUrl: activeImagesMap[p.code] || null,
   sortOrder: index + 1,
+  isHidden: false,
   createdAt: new Date(),
   updatedAt: new Date(),
 }));
@@ -286,10 +287,12 @@ export async function addProduct(input: {
   unitLabel: string;
   imageUrl?: string | null;
   qty?: number | null;
+  isHidden?: boolean;
 }) {
   const normalizedImageUrl = normalizeOptionalImageUrl(input.imageUrl);
   const newId = memoryProducts.length > 0 ? Math.max(...memoryProducts.map((p) => p.id)) + 1 : 1;
   const nextSort = memoryProducts.length > 0 ? Math.max(...memoryProducts.map((p) => p.sortOrder)) + 1 : 1;
+  const isHidden = input.isHidden ?? false;
 
   const newProd: Product = {
     id: newId,
@@ -307,6 +310,7 @@ export async function addProduct(input: {
     unitLabel: input.unitLabel,
     imageUrl: normalizedImageUrl,
     sortOrder: nextSort,
+    isHidden,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -318,7 +322,7 @@ export async function addProduct(input: {
 
   try {
     const db = getDb();
-    await db.insert(products).values({ ...input, imageUrl: normalizedImageUrl, sortOrder: nextSort, qty: input.qty ?? null });
+    await db.insert(products).values({ ...input, isHidden, imageUrl: normalizedImageUrl, sortOrder: nextSort, qty: input.qty ?? null });
   } catch (err) {
     console.warn("DB insert fallback to memory:", err);
   }
@@ -326,7 +330,7 @@ export async function addProduct(input: {
 
 export async function editProduct(
   id: number,
-  fields: Partial<Pick<typeof products.$inferInsert, "code" | "nameAr" | "nameEn" | "category" | "mode" | "unitCode" | "unitLabel" | "imageUrl">>,
+  fields: Partial<Pick<typeof products.$inferInsert, "code" | "nameAr" | "nameEn" | "category" | "mode" | "unitCode" | "unitLabel" | "imageUrl" | "isHidden">>,
 ) {
   const current = memoryProducts.find((p) => p.id === id);
   const normalizedImageUrl = fields.imageUrl === undefined ? undefined : normalizeOptionalImageUrl(fields.imageUrl);
@@ -357,6 +361,26 @@ export async function editProduct(
   } catch (err) {
     console.warn("DB edit fallback to memory:", err);
   }
+}
+
+export async function toggleProductVisibility(id: number, isHidden: boolean) {
+  memoryProducts = memoryProducts.map((p) => {
+    if (p.id === id) {
+      return {
+        ...p,
+        isHidden,
+        updatedAt: new Date(),
+      };
+    }
+    return p;
+  });
+
+  try {
+    await getDb().update(products).set({ isHidden }).where(eq(products.id, id));
+  } catch (err) {
+    console.warn("DB toggleProductVisibility fallback to memory:", err);
+  }
+  return { ok: true, id, isHidden };
 }
 
 export async function deleteProduct(id: number) {

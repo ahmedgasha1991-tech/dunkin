@@ -50,9 +50,10 @@ export default function Admin() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
 
-  // Search & Category filter states for Products
+  // Search & Category & Visibility filter states for Products
   const [search, setSearch] = useState("");
   const [selectedCat, setSelectedCat] = useState("ALL");
+  const [visibilityFilter, setVisibilityFilter] = useState<"ALL" | "VISIBLE" | "HIDDEN">("ALL");
 
   const addMut = trpc.inventory.add.useMutation({
     onSuccess: () => {
@@ -68,14 +69,22 @@ export default function Admin() {
     },
   });
 
+  const toggleVisibilityMut = trpc.inventory.toggleVisibility.useMutation({
+    onSuccess: () => {
+      utils.inventory.list.invalidate();
+    },
+  });
+
   const removeMut = trpc.inventory.remove.useMutation({
     onSuccess: () => utils.inventory.list.invalidate(),
   });
 
   const products = listQuery.data ?? [];
   const allCategories = useMemo(() => Array.from(new Set(products.map((p) => p.category))), [products]);
+  const hiddenCount = useMemo(() => products.filter((p) => !!p.isHidden).length, [products]);
+  const visibleCount = useMemo(() => products.filter((p) => !p.isHidden).length, [products]);
 
-  // Filter products by search term (name / code) and category tab
+  // Filter products by search term (name / code), category tab, and visibility
   const filteredProducts = useMemo(() => {
     const term = search.toLowerCase().trim();
     return products.filter((p) => {
@@ -89,9 +98,14 @@ export default function Admin() {
         catEn.includes(term);
 
       const matchCat = selectedCat === "ALL" || p.category === selectedCat;
-      return matchSearch && matchCat;
+      const matchVisibility =
+        visibilityFilter === "ALL" ||
+        (visibilityFilter === "VISIBLE" && !p.isHidden) ||
+        (visibilityFilter === "HIDDEN" && !!p.isHidden);
+
+      return matchSearch && matchCat && matchVisibility;
     });
-  }, [products, search, selectedCat, getCategoryName]);
+  }, [products, search, selectedCat, visibilityFilter, getCategoryName]);
 
   // Group filtered products by category in a single O(N) pass
   const groupedProducts = useMemo(() => {
@@ -438,10 +452,11 @@ export default function Admin() {
           {activeMenu === "products" && (
             <div className="space-y-6 animate-in fade-in duration-200">
               {/* Stat Cards */}
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
                 <StatCard label={t("totalProducts")} value={String(products.length)} icon="ph-package" tone="violet" />
+                <StatCard label={lang === "ar" ? "الظاهرة للموظفين" : "Visible"} value={String(visibleCount)} icon="ph-eye" tone="emerald" />
+                <StatCard label={lang === "ar" ? "المخفية عن الموظفين" : "Hidden"} value={String(hiddenCount)} icon="ph-eye-slash" tone="violet" />
                 <StatCard label={t("categoriesCount")} value={String(allCategories.length)} icon="ph-folder" tone="blue" />
-                <StatCard label={t("productImages")} value={String(products.filter((p) => !!p.imageUrl).length)} icon="ph-image" tone="emerald" />
               </div>
 
               {/* Products Management Card */}
@@ -456,8 +471,8 @@ export default function Admin() {
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
                       {lang === "ar"
-                        ? "إدارة وتعديل المنتجات مقسمة حسب الأقسام مع إمكانية البحث بالاسم أو الرقم"
-                        : "Manage and edit products grouped by category with search by name or code"}
+                        ? "إدارة وتعديل المنتجات وإخفائها عن الموظفين مع إمكانية البحث والفلترة السريعة"
+                        : "Manage, edit and hide products from staff with fast search and filters"}
                     </p>
                   </div>
 
@@ -495,6 +510,58 @@ export default function Admin() {
                       <i className="ph-bold ph-x text-sm"></i>
                     </button>
                   )}
+                </div>
+
+                {/* Visibility Filter Selector (الكل / الظاهرة للموظفين / المخفية عن الموظفين) */}
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <span className="text-xs font-black text-slate-500 flex items-center gap-1">
+                    <i className="ph-bold ph-eye"></i>
+                    {lang === "ar" ? "حالة الظهور للموظف:" : "Visibility filter:"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setVisibilityFilter("ALL")}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      visibilityFilter === "ALL"
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    <span>{lang === "ar" ? "الكل" : "All"}</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${visibilityFilter === "ALL" ? "bg-white/20 text-white" : "bg-white text-slate-500"}`}>
+                      {products.length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVisibilityFilter("VISIBLE")}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      visibilityFilter === "VISIBLE"
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                    }`}
+                  >
+                    <i className="ph-bold ph-eye text-[12px]"></i>
+                    <span>{lang === "ar" ? "الظاهرة فقط" : "Visible only"}</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${visibilityFilter === "VISIBLE" ? "bg-white/20 text-white" : "bg-white text-emerald-700"}`}>
+                      {visibleCount}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVisibilityFilter("HIDDEN")}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      visibilityFilter === "HIDDEN"
+                        ? "bg-purple-700 text-white shadow-xs"
+                        : "bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200"
+                    }`}
+                  >
+                    <i className="ph-bold ph-eye-slash text-[12px]"></i>
+                    <span>{lang === "ar" ? "المخفية عن الموظفين" : "Hidden from staff"}</span>
+                    <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-md ${visibilityFilter === "HIDDEN" ? "bg-white/20 text-white" : "bg-purple-200 text-purple-900"}`}>
+                      {hiddenCount}
+                    </span>
+                  </button>
                 </div>
 
                 {/* Category Filter Tabs */}
@@ -617,6 +684,12 @@ export default function Admin() {
                                         <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
                                           {unitLabel}
                                         </span>
+                                        {product.isHidden && (
+                                          <span className="inline-flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 border border-purple-300">
+                                            <i className="ph-bold ph-eye-slash text-xs"></i>
+                                            {lang === "ar" ? "مخفي عن الموظفين" : "Hidden from staff"}
+                                          </span>
+                                        )}
                                         {product.lastStockUpdate && (
                                           <button
                                             onClick={() => setHistoryProduct(product)}
@@ -652,7 +725,31 @@ export default function Admin() {
                                   </div>
 
                                   {/* Actions */}
-                                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center flex-wrap">
+                                    {/* Toggle Visibility Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleVisibilityMut.mutate({ id: product.id, isHidden: !product.isHidden })}
+                                      disabled={toggleVisibilityMut.isPending}
+                                      className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                                        product.isHidden
+                                          ? "bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+                                          : "bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100"
+                                      }`}
+                                      title={
+                                        product.isHidden
+                                          ? (lang === "ar" ? "إظهار المنتج للموظفين" : "Show product to staff")
+                                          : (lang === "ar" ? "إخفاء المنتج عن الموظفين" : "Hide product from staff")
+                                      }
+                                    >
+                                      <i className={`ph-bold ${product.isHidden ? "ph-eye text-emerald-700" : "ph-eye-slash text-purple-700"}`}></i>
+                                      <span>
+                                        {product.isHidden
+                                          ? (lang === "ar" ? "إظهار للموظفين" : "Show to Staff")
+                                          : (lang === "ar" ? "إخفاء عن الموظفين" : "Hide from Staff")}
+                                      </span>
+                                    </button>
+
                                     <button
                                       onClick={() => setHistoryProduct(product)}
                                       className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition flex items-center gap-1 shadow-sm"

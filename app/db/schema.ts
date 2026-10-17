@@ -6,6 +6,7 @@ import {
   varchar,
   timestamp,
   text,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 export const modeEnum = pgEnum("mode", ["simple", "detailed"]);
@@ -30,6 +31,7 @@ export const products = pgTable("products", {
   unitLabel: varchar("unit_label", { length: 64 }).notNull(),
   imageUrl: varchar("image_url", { length: 1024 }),
   sortOrder: integer("sort_order").notNull().default(0),
+  isHidden: boolean("is_hidden").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

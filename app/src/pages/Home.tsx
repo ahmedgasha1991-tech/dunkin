@@ -245,22 +245,28 @@ export default function Home() {
     setHistoryProduct(prod);
   }, []);
 
-  const categories = useMemo(() => Array.from(new Set(items.map((p) => p.category))), [items]);
+  const isAdmin = session?.role === "admin";
+  const visibleItems = useMemo(() => {
+    if (isAdmin) return items;
+    return items.filter((p) => !p.isHidden);
+  }, [items, isAdmin]);
+
+  const categories = useMemo(() => Array.from(new Set(visibleItems.map((p) => p.category))), [visibleItems]);
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (let i = 0; i < items.length; i++) {
-      const c = items[i].category;
+    for (let i = 0; i < visibleItems.length; i++) {
+      const c = visibleItems[i].category;
       counts[c] = (counts[c] || 0) + 1;
     }
     return counts;
-  }, [items]);
+  }, [visibleItems]);
 
   const deferredSearch = useDeferredValue(search);
 
   const filtered = useMemo(() => {
     const term = deferredSearch.toLowerCase().trim();
-    return items.filter((p) => {
+    return visibleItems.filter((p) => {
       const catEn = getCategoryName(p.category).toLowerCase();
       const mSearch =
         !term ||
@@ -273,7 +279,7 @@ export default function Home() {
       const mUnit = unitFilter === "ALL" || p.unitCode === unitFilter;
       return mSearch && mCat && mUnit;
     });
-  }, [items, deferredSearch, selectedCat, unitFilter, getCategoryName]);
+  }, [visibleItems, deferredSearch, selectedCat, unitFilter, getCategoryName]);
 
   const [visibleCount, setVisibleCount] = useState(36);
 
@@ -302,27 +308,29 @@ export default function Home() {
     return () => observer.disconnect();
   }, [filtered.length]);
 
-  const orderedItems = items.filter((p) => p.orderQty != null && p.orderQty > 0);
+  const orderedItems = useMemo(() => {
+    return visibleItems.filter((p) => p.orderQty != null && p.orderQty > 0);
+  }, [visibleItems]);
   const promptProd = promptId != null ? items.find((p) => p.id === promptId) : undefined;
 
   const stockStats = useMemo(() => {
     let inStock = 0;
     let lowStock = 0;
     let outOfStock = 0;
-    items.forEach((p) => {
+    visibleItems.forEach((p) => {
       const q = p.qty ?? 0;
       if (q === 0) outOfStock++;
       else if (q <= 10) lowStock++;
       else inStock++;
     });
     return {
-      total: items.length,
+      total: visibleItems.length,
       inStock,
       lowStock,
       outOfStock,
       inOrder: orderedItems.length,
     };
-  }, [items, orderedItems.length]);
+  }, [visibleItems, orderedItems.length]);
 
   const fallbackCopy = (text: string) => {
     const textarea = document.createElement("textarea");
@@ -1709,23 +1717,36 @@ const ProductCard = React.memo(function ProductCard({
             </span>
           </div>
 
-          {/* Smart Stock Status Badge */}
-          {qtyVal === 0 ? (
-            <span className="inline-flex items-center gap-1 text-[9.5px] sm:text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
-              {lang === "ar" ? "نفد" : "Out"}
-            </span>
-          ) : qtyVal <= 10 ? (
-            <span className="inline-flex items-center gap-1 text-[9.5px] sm:text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-              {lang === "ar" ? "منخفض" : "Low"}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-[9.5px] sm:text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              {lang === "ar" ? "متوفر" : "In Stock"}
-            </span>
-          )}
+          {/* Stock & Visibility Badges */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {p.isHidden && (
+              <span
+                className="inline-flex items-center gap-1 text-[9px] sm:text-[9.5px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-300 shadow-2xs shrink-0"
+                title={lang === "en" ? "Hidden from branch staff (Admin only)" : "مخفي عن موظفي الفروع (مرئي للإدارة فقط)"}
+              >
+                <i className="ph-bold ph-eye-slash text-[10px]"></i>
+                {lang === "ar" ? "مخفي" : "Hidden"}
+              </span>
+            )}
+
+            {/* Smart Stock Status Badge */}
+            {qtyVal === 0 ? (
+              <span className="inline-flex items-center gap-1 text-[9.5px] sm:text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+                {lang === "ar" ? "نفد" : "Out"}
+              </span>
+            ) : qtyVal <= 10 ? (
+              <span className="inline-flex items-center gap-1 text-[9.5px] sm:text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                {lang === "ar" ? "منخفض" : "Low"}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[9.5px] sm:text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                {lang === "ar" ? "متوفر" : "In Stock"}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Product Media Layout: Horizontal side-by-side on mobile, stacked on desktop */}
@@ -1961,6 +1982,7 @@ export function AddProductModal({
     unitLabel: string;
     imageUrl?: string | null;
     qty?: number | null;
+    isHidden?: boolean;
   }) => void;
   isLoading: boolean;
 }) {
@@ -1970,6 +1992,7 @@ export function AddProductModal({
   const [nameAr, setNameAr] = useState(product?.nameAr ?? "");
   const [nameEn, setNameEn] = useState(product?.nameEn ?? "");
   const [initialQty, setInitialQty] = useState(product?.qty != null ? String(product.qty) : "");
+  const [isHidden, setIsHidden] = useState(product?.isHidden ?? false);
   const [imageUrl, setImageUrl] = useState(
     product?.imageUrl || (product?.code ? getUploadedProductImage(product.code) : "") || ""
   );
@@ -2183,6 +2206,36 @@ export function AddProductModal({
                 : "إذا قمت بإدخال كمية أكبر من صفر، فسيظهر الصنف بحالة 'متوفر' مباشرة بدلاً من 'نفد'."}
             </p>
           </div>
+
+          {/* Hide Product Checkbox Toggle */}
+          <div
+            className="bg-purple-50/70 border border-purple-200/90 rounded-2xl p-3.5 flex items-center justify-between cursor-pointer hover:bg-purple-50 transition"
+            onClick={() => setIsHidden(!isHidden)}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                <i className={`ph-bold ${isHidden ? "ph-eye-slash text-purple-700" : "ph-eye text-slate-500"} text-lg`}></i>
+              </div>
+              <div>
+                <p className="text-xs sm:text-sm font-black text-slate-900">
+                  {lang === "en" ? "Hide product from branch employees" : "إخفاء المنتج عن موظفي الفروع"}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {lang === "en"
+                    ? "When checked, only admins can view, order or audit this product."
+                    : "عند التفعيل، لن يظهر هذا الصنف للموظفين في قائمة الجرد أو الطلبيات أو التحويلات."}
+                </p>
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={isHidden}
+              onChange={(e) => setIsHidden(e.target.checked)}
+              onClick={(e) => e.stopPropagation()}
+              disabled={isLoading}
+              className="w-5 h-5 accent-purple-600 rounded cursor-pointer shrink-0"
+            />
+          </div>
         </div>
         <div className="p-6 border-t border-slate-100 flex gap-3 bg-white rounded-b-3xl">
           <button onClick={onClose} disabled={isLoading} className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-bold py-3.5 rounded-xl transition">
@@ -2200,6 +2253,7 @@ export function AddProductModal({
               unitLabel: unitLabels[unitCode],
               imageUrl: imageUrl.trim() || null,
               qty: initialQty.trim() !== "" ? parseInt(initialQty, 10) : null,
+              isHidden,
             })}
             className="flex-[2] bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
           >

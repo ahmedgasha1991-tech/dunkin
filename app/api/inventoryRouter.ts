@@ -5,6 +5,7 @@ import {
   updateProduct,
   addProduct,
   editProduct,
+  toggleProductVisibility,
   deleteProduct,
   saveInventorySnapshot,
   listInventorySnapshots,
@@ -104,6 +105,7 @@ export const inventoryRouter = createRouter({
         unitLabel: z.string().min(1),
         imageUrl: optionalNullableImageUrl,
         qty: z.number().int().min(0).nullable().optional(),
+        isHidden: z.boolean().optional(),
       }),
     )
     .mutation(async ({ input }) => {
@@ -124,12 +126,26 @@ export const inventoryRouter = createRouter({
         unitCode: unitCode.optional(),
         unitLabel: z.string().min(1).optional(),
         imageUrl: optionalNullableImageUrl,
+        isHidden: z.boolean().optional(),
       }),
     )
     .mutation(async ({ input }) => {
       const { id, ...fields } = input;
       await editProduct(id, fields);
       return { ok: true };
+    }),
+
+  /** إخفاء / إظهار المنتج للموظفين: مخصص لمدير النظام (الأدمن) فقط */
+  toggleVisibility: adminProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        isHidden: z.boolean(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      await toggleProductVisibility(input.id, input.isHidden);
+      return { ok: true, id: input.id, isHidden: input.isHidden };
     }),
 
   /** حذف منتج: مخصص لمدير النظام (الأدمن) فقط */
