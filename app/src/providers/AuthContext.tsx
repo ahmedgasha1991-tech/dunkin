@@ -246,7 +246,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const saved = localStorage.getItem(SELECTED_BRANCH_KEY);
       if (saved) return saved;
     }
-    return session?.branch_code || "1010001";
+    return session?.branch_code || "1011125";
   });
 
   const [branchesList, setBranchesList] = useState<BranchRecord[]>(() => {
@@ -274,12 +274,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       let baseList: BranchRecord[];
 
-      if (error || !data || data.length === 0) {
-        baseList = local !== null ? local : DEFAULT_BRANCHES;
-      } else if (local !== null) {
+      if (!error && data && data.length > 0) {
+        baseList = data as BranchRecord[];
+      } else if (local !== null && local.length > 0) {
         baseList = local;
       } else {
-        baseList = data as BranchRecord[];
+        baseList = DEFAULT_BRANCHES;
       }
 
       const cleanBranches = filterDeletedBranches(baseList);
@@ -602,7 +602,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       let empId = requestId;
       let fullName = "موظف جديد";
-      let branchCode = "1010001";
+      let branchCode = "1011125";
 
       if (req) {
         empId = req.employee_id;
