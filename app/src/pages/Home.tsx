@@ -482,11 +482,12 @@ export default function Home() {
             {/* Mobile Sidebar Toggle Button */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center text-lg transition active:scale-95 shrink-0"
+              className="lg:hidden h-9 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 flex items-center gap-1 text-xs font-black transition active:scale-95 shrink-0"
               aria-label="Toggle sidebar menu"
               title={lang === "en" ? "Open Menu" : "فتح القائمة"}
             >
-              <i className="ph-bold ph-list"></i>
+              <i className="ph-bold ph-list text-base text-blue-600"></i>
+              <span className="text-[11px] font-black">{lang === "ar" ? "القائمة" : "Menu"}</span>
             </button>
 
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-600/25 shrink-0">
@@ -503,7 +504,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Top Quick Actions */}
+          {/* Top Quick Actions (Desktop & Tablet) */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Language Toggle Button */}
             <button
@@ -512,17 +513,17 @@ export default function Home() {
               className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition flex items-center gap-1.5 text-xs"
             >
               <i className="ph-bold ph-globe text-sm sm:text-base text-blue-600"></i>
-              <span className="hidden sm:inline">{t("langBtn")}</span>
+              <span>{t("langBtn")}</span>
             </button>
 
             {/* Order Cart Button */}
             <button
               onClick={() => setShowOrder(true)}
-              className="relative bg-blue-600 sm:bg-blue-50 text-white sm:text-blue-700 hover:bg-blue-700 sm:hover:bg-blue-100 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition flex items-center gap-1.5 sm:border sm:border-blue-200 text-xs shadow-sm"
+              className="relative bg-blue-600 text-white hover:bg-blue-700 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition flex items-center gap-1.5 text-xs shadow-sm"
               title={t("orderList")}
             >
               <i className="ph-bold ph-shopping-cart text-sm sm:text-base"></i>
-              <span className="hidden sm:inline">{t("orderList")}</span>
+              <span>{t("orderList")}</span>
               {orderedItems.length > 0 && (
                 <span className="bg-red-500 text-white text-[10px] min-w-4 sm:min-w-5 h-4 sm:h-5 px-1 rounded-full flex items-center justify-center font-black animate-pulse">
                   {orderedItems.length}
@@ -583,6 +584,62 @@ export default function Home() {
               </div>
             )}
           </div>
+        </div>
+
+        {/* ── Mobile Quick Action Toolbar (ظاهر فقط على شاشات الجوال لسهولة الوصول) ── */}
+        <div className="sm:hidden bg-slate-50 border-t border-slate-200/80 px-2 py-1.5 flex items-center justify-between gap-1 overflow-x-auto no-scrollbar">
+          {/* Receive Goods Button */}
+          <button
+            onClick={() => {
+              if (orderedItems.length === 0) {
+                notify(lang === "en" ? "No items in order list to receive." : "لا توجد بضاعة في قائمة الطلبات لاستلامها حالياً! حدد كميات الطلب أولاً.");
+                setShowOrder(true);
+              } else {
+                setShowReceivingModal(true);
+              }
+            }}
+            className="flex-1 py-1.5 px-2 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-xl font-extrabold text-[11px] flex items-center justify-center gap-1 transition active:scale-95 shadow-xs"
+          >
+            <i className="ph-bold ph-package-receive text-xs text-emerald-600"></i>
+            <span>{lang === "en" ? "Receive" : "استلام"}</span>
+          </button>
+
+          {/* Transfers Button */}
+          <button
+            onClick={() => setShowTransferModal(true)}
+            className="flex-1 py-1.5 px-2 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-xl font-extrabold text-[11px] flex items-center justify-center gap-1 transition active:scale-95 shadow-xs relative"
+          >
+            <i className="ph-bold ph-arrows-left-right text-xs text-indigo-600"></i>
+            <span>{lang === "en" ? "Transfers" : "تحويلات"}</span>
+            {pendingTransfersCount > 0 && (
+              <span className="bg-indigo-600 text-white text-[9px] px-1 rounded-full font-black animate-pulse">
+                {pendingTransfersCount}
+              </span>
+            )}
+          </button>
+
+          {/* Admin Panel Button (Mobile) */}
+          {session?.role === "admin" && (
+            <button
+              onClick={() => navigate("/admin")}
+              className="py-1.5 px-2.5 bg-purple-600 text-white rounded-xl font-extrabold text-[11px] flex items-center justify-center gap-1 shadow-xs active:scale-95 transition shrink-0"
+            >
+              <i className="ph-bold ph-shield-check text-xs"></i>
+              <span>{lang === "en" ? "Admin" : "الإدارة"}</span>
+            </button>
+          )}
+
+          {/* Quick Order Cart Preview Button */}
+          <button
+            onClick={() => setShowOrder(true)}
+            className="py-1.5 px-2.5 bg-blue-50 text-blue-800 border border-blue-200 rounded-xl font-extrabold text-[11px] flex items-center justify-center gap-1 shadow-xs active:scale-95 transition shrink-0"
+          >
+            <i className="ph-bold ph-shopping-cart text-xs text-blue-600"></i>
+            <span>{lang === "en" ? "Order" : "الطلبات"}</span>
+            <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.2 rounded-full font-black">
+              {orderedItems.length}
+            </span>
+          </button>
         </div>
       </header>
 
