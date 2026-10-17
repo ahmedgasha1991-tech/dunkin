@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: dunkin-inventory
+    env: node
+    plan: free
+    rootDir: app
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
+      - key: VITE_SUPABASE_URL
+        value: https://ominfwrmptjxjdxqqdts.supabase.co
+      - key: VITE_SUPABASE_ANON_KEY
+        value: sb_publishable_r6GduVnOGpx1Dt4J0v6ncg_M2VYKcZf
+      - key: DATABASE_URL
+        value: postgresql://postgres:Aa11788%4011788@db.ominfwrmptjxjdxqqdts.supabase.co:5432/postgres
