@@ -258,11 +258,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(false);
 
   const setSelectedBranch = (code: string) => {
+    // If user is a regular employee, they cannot change their branch!
+    if (session && session.role !== "admin") {
+      const fixedBranch = session.branch_code || "1011125";
+      setSelectedBranchState(fixedBranch);
+      if (typeof window !== "undefined") {
+        localStorage.setItem(SELECTED_BRANCH_KEY, fixedBranch);
+      }
+      return;
+    }
+
     setSelectedBranchState(code);
     if (typeof window !== "undefined") {
       localStorage.setItem(SELECTED_BRANCH_KEY, code);
     }
   };
+
+  // Automatically enforce employee branch lock
+  useEffect(() => {
+    if (session && session.role !== "admin" && session.branch_code) {
+      if (selectedBranch !== session.branch_code) {
+        setSelectedBranchState(session.branch_code);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(SELECTED_BRANCH_KEY, session.branch_code);
+        }
+      }
+    }
+  }, [session, selectedBranch]);
 
   const fetchBranchesList = async (): Promise<BranchRecord[]> => {
     const local = getBranchesFromStorage();

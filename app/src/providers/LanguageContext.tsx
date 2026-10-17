@@ -120,7 +120,8 @@ const translations: Record<Language, Record<string, string>> = {
     loosePiecesCount: "حبات مفرطة",
     actualTotal: "الإجمالي الفعلي",
     pcs: "حبة",
-    writeCapacity: "اكتب السعة"
+    writeCapacity: "اكتب السعة",
+    resetAllBtn: "تصفير كامل المخزون"
   },
   en: {
     appTitle: "Inventory Management",
@@ -131,6 +132,7 @@ const translations: Record<Language, Record<string, string>> = {
     monthlySnapshot: "Save Monthly Audit",
     auditHistory: "Audit History",
     resetQuantities: "Reset All Quantities",
+    resetAllBtn: "Reset All Stock",
     adminPanel: "Admin Panel",
     operationalAudit: "Operational Audit",
     auditTitle: "Operational Audit System",

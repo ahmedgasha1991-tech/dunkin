@@ -903,37 +903,66 @@ export default function Home() {
               )}
             </nav>
 
-            {/* Branch Switcher In Sidebar */}
+            {/* Branch Switcher In Sidebar - Admin can switch, Employee is locked */}
             <div className="mt-4 pt-3 border-t border-slate-100">
-              <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wider mb-1.5">
-                {lang === "ar" ? "تبديل الفرع المختار" : "Switch Branch"}
-              </label>
-              <div className="relative bg-slate-50 border border-slate-200 rounded-2xl p-1.5 flex items-center gap-2">
-                <i className="ph-bold ph-storefront text-slate-500 text-lg shrink-0 mr-1"></i>
-                <select
-                  value={selectedBranch}
-                  onChange={(e) => setSelectedBranch(e.target.value)}
-                  className="bg-transparent border-none outline-none font-bold text-xs text-slate-800 w-full cursor-pointer"
-                >
-                  {branchesList.map((b) => (
-                    <option key={b.branch_code} value={b.branch_code}>
-                      {b.branch_code} - {getBranchName(b.branch_code, b.branch_name)}
-                    </option>
-                  ))}
-                </select>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                  {session?.role === "admin"
+                    ? (lang === "ar" ? "تبديل الفرع المختار" : "Switch Branch")
+                    : (lang === "ar" ? "فرع العمل المخصص لك" : "Your Assigned Branch")}
+                </label>
+                {session?.role !== "admin" && (
+                  <span className="text-[10px] bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                    <i className="ph-bold ph-lock-key text-slate-400"></i>
+                    <span>{lang === "ar" ? "ثابت" : "Locked"}</span>
+                  </span>
+                )}
               </div>
+
+              {session?.role === "admin" ? (
+                <div className="relative bg-slate-50 border border-slate-200 rounded-2xl p-1.5 flex items-center gap-2">
+                  <i className="ph-bold ph-storefront text-purple-600 text-lg shrink-0 mr-1"></i>
+                  <select
+                    value={selectedBranch}
+                    onChange={(e) => setSelectedBranch(e.target.value)}
+                    className="bg-transparent border-none outline-none font-bold text-xs text-slate-800 w-full cursor-pointer"
+                  >
+                    {branchesList.map((b) => (
+                      <option key={b.branch_code} value={b.branch_code}>
+                        {b.branch_code} - {getBranchName(b.branch_code, b.branch_name)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-2.5 flex items-center gap-2.5 text-slate-700">
+                  <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center text-base shrink-0 font-bold">
+                    <i className="ph-bold ph-storefront"></i>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-extrabold text-xs text-slate-900 truncate">
+                      {selectedBranch} - {getBranchName(selectedBranch, branchesList.find(b => b.branch_code === selectedBranch)?.branch_name || session?.branch_name)}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-medium truncate">
+                      {lang === "ar" ? "حساب الموظف مقيد بهذا الفرع فقط" : "Employee account locked to this branch"}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Reset All Stock Button */}
-            <div className="mt-3 pt-3 border-t border-slate-100">
-              <button
-                onClick={() => setShowReset(true)}
-                className="w-full py-2.5 px-3 rounded-xl border border-red-200 bg-red-50/60 hover:bg-red-50 text-red-600 font-bold text-xs transition flex items-center justify-center gap-1.5"
-              >
-                <i className="ph-bold ph-arrows-counter-clockwise text-sm"></i>
-                <span>{t("resetAllBtn")}</span>
-              </button>
-            </div>
+            {/* Reset All Stock Button - Only Admin Can Reset Stock */}
+            {session?.role === "admin" && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <button
+                  onClick={() => setShowReset(true)}
+                  className="w-full py-2.5 px-3 rounded-xl border border-red-200 bg-red-50/60 hover:bg-red-50 text-red-600 font-bold text-xs transition flex items-center justify-center gap-1.5"
+                >
+                  <i className="ph-bold ph-arrows-counter-clockwise text-sm"></i>
+                  <span>{t("resetAllBtn")}</span>
+                </button>
+              </div>
+            )}
 
             {/* Employee Session Card at Bottom of Sidebar */}
             {session && (
