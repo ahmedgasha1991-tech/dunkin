@@ -464,7 +464,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen pb-24" dir={lang === "ar" ? "rtl" : "ltr"}>
+    <div className="min-h-screen pb-24 w-full max-w-full overflow-x-hidden" dir={lang === "ar" ? "rtl" : "ltr"}>
       {/* Offline & Sync Status Banner */}
       <OfflineBanner onSyncNow={handleSyncNow} isSyncing={isSyncing} />
 
@@ -476,13 +476,13 @@ export default function Home() {
       )}
 
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto px-2.5 sm:px-4 h-14 sm:h-16 flex items-center justify-between">
-          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs w-full">
+        <div className="max-w-7xl mx-auto px-2 sm:px-4 h-14 sm:h-16 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1">
             {/* Mobile Sidebar Toggle Button */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden h-9 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 flex items-center gap-1 text-xs font-black transition active:scale-95 shrink-0"
+              className="lg:hidden h-9 px-2 sm:px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 flex items-center gap-1 text-xs font-black transition active:scale-95 shrink-0"
               aria-label="Toggle sidebar menu"
               title={lang === "en" ? "Open Menu" : "فتح القائمة"}
             >
@@ -491,9 +491,9 @@ export default function Home() {
             </button>
 
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-600/25 shrink-0">
-              <i className="ph ph-package text-xl sm:text-2xl"></i>
+              <i className="ph ph-package text-lg sm:text-2xl"></i>
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h1 className="text-xs sm:text-base md:text-lg font-black text-slate-900 leading-tight flex items-center gap-1.5 truncate">
                 <span>{t("appTitle")}</span>
               </h1>
@@ -506,20 +506,21 @@ export default function Home() {
 
           {/* Top Quick Actions (Desktop & Tablet) */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Language Toggle Button */}
+            {/* Language Toggle Button - Compact EN/عربي on mobile, full text on desktop */}
             <button
               onClick={toggleLang}
               title={t("langTitle")}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition flex items-center gap-1.5 text-xs"
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition flex items-center gap-1 text-xs shrink-0"
             >
               <i className="ph-bold ph-globe text-sm sm:text-base text-blue-600"></i>
-              <span>{t("langBtn")}</span>
+              <span className="hidden sm:inline">{t("langBtn")}</span>
+              <span className="sm:hidden font-mono font-bold">{lang === "ar" ? "EN" : "عربي"}</span>
             </button>
 
-            {/* Order Cart Button */}
+            {/* Order Cart Button (Desktop only; on mobile it is right below in the toolbar) */}
             <button
               onClick={() => setShowOrder(true)}
-              className="relative bg-blue-600 text-white hover:bg-blue-700 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition flex items-center gap-1.5 text-xs shadow-sm"
+              className="hidden sm:flex relative bg-blue-600 text-white hover:bg-blue-700 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition items-center gap-1.5 text-xs shadow-sm"
               title={t("orderList")}
             >
               <i className="ph-bold ph-shopping-cart text-sm sm:text-base"></i>
