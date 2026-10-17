@@ -7,6 +7,7 @@ import { useLanguage } from "@/providers/LanguageContext";
 import { useAuth } from "@/providers/AuthContext";
 import { getCachedProducts } from "@/lib/offlineSync";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { getProductImage } from "@/lib/productImages";
 
 // ─── الفئات التي تُفلتَر للجرد الأسبوعي (سريعة الاستهلاك) ──────────────────
 const WEEKLY_CATEGORIES = new Set([
@@ -94,6 +95,8 @@ export default function Audit() {
   const [customPreset, setCustomPreset] = useState<"sunday_bakery" | "cups_packaging" | "coffee_syrup" | "manual">("sunday_bakery");
   const [selectedProductCodes, setSelectedProductCodes] = useState<Set<string>>(new Set());
   const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerCategoryFilter, setPickerCategoryFilter] = useState("ALL");
+  const [pickerOnlySelected, setPickerOnlySelected] = useState(false);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [addProductSearch, setAddProductSearch] = useState("");
 
@@ -230,6 +233,29 @@ export default function Audit() {
     setShowAddProductModal(false);
     notify(lang === "en" ? `Added ${newRow.productName} to audit` : `تمت إضافة ${newRow.productName} إلى الجرد`);
   };
+
+  // ─── استخراج تصنيفات المنتجات للتصفية السريعة في الجرد المخصص ───────────────
+  const pickerCategories = useMemo(() => {
+    const prods = (productsQuery.data && productsQuery.data.length > 0) ? productsQuery.data : getCachedProducts();
+    const set = new Set<string>();
+    prods.forEach((p) => {
+      if (p.category) set.add(p.category);
+    });
+    return Array.from(set);
+  }, [productsQuery.data]);
+
+  // ─── المنتجات المفلترة لقائمة الاختيار في الجرد المخصص ─────────────────────
+  const pickerFilteredProducts = useMemo(() => {
+    const list = (productsQuery.data && productsQuery.data.length > 0) ? productsQuery.data : getCachedProducts();
+    return list.filter((p) => {
+      if (pickerOnlySelected && !selectedProductCodes.has(p.code)) return false;
+      if (pickerCategoryFilter !== "ALL" && p.category !== pickerCategoryFilter) return false;
+      if (!pickerSearch.trim()) return true;
+      const q = pickerSearch.toLowerCase().trim();
+      const t = `${p.nameAr || ""} ${p.nameEn || ""} ${p.code} ${p.category}`.toLowerCase();
+      return t.includes(q);
+    });
+  }, [productsQuery.data, pickerOnlySelected, selectedProductCodes, pickerCategoryFilter, pickerSearch]);
 
   // ─── بناء صفوف الجرد عند تغيير نوعه أو تحميل المنتجات أو تغيير الاختيار ─────
   useEffect(() => {
@@ -756,123 +782,217 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
 
             {/* تفاصيل وخيارات الجرد المخصص (مثل جرد يوم الأحد) */}
             {auditType === "custom" && (
-              <div className="mb-5 p-3.5 rounded-2xl bg-orange-50/80 border border-orange-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-orange-950 flex items-center gap-1">
-                    <i className="ph-bold ph-lightning text-orange-600"></i>
-                    {lang === "en" ? "Quick Pre-sets:" : "قوالب سريعة:"}
+              <div className="mb-5 p-3.5 sm:p-4 rounded-3xl bg-orange-50/80 border-2 border-orange-200 space-y-3.5 shadow-sm">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-xs sm:text-sm font-black text-orange-950 flex items-center gap-1.5">
+                    <i className="ph-bold ph-lightning text-orange-600 text-base"></i>
+                    {lang === "en" ? "Quick Pre-sets:" : "قوالب سريعة جاهزة:"}
                   </span>
-                  <span className="text-[11px] font-black text-orange-700 bg-white px-2.5 py-0.5 rounded-full border border-orange-200 shadow-xs">
-                    {lang === "en" ? `${selectedProductCodes.size} selected` : `تم تحديد ${selectedProductCodes.size} صنف`}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-orange-700 bg-white px-3 py-1 rounded-full border border-orange-200 shadow-xs">
+                      {lang === "en" ? `${selectedProductCodes.size} selected` : `تم تحديد ${selectedProductCodes.size} صنف`}
+                    </span>
+                  </div>
                 </div>
 
                 {/* أزرار القوالب الجاهزة */}
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                   <button
                     type="button"
                     onClick={() => productsQuery.data && applyPresetSelection("sunday_bakery", productsQuery.data)}
-                    className={`px-2.5 py-2 text-xs font-bold rounded-xl border transition text-right flex items-center gap-1.5 ${
+                    className={`p-2.5 rounded-2xl border-2 transition text-right flex items-center gap-2.5 ${
                       customPreset === "sunday_bakery"
-                        ? "bg-orange-500 text-white border-orange-500 shadow-sm"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                        ? "bg-orange-500 text-white border-orange-600 shadow-sm"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-orange-200"
                     }`}
                   >
-                    <span>🥐</span>
-                    <span className="truncate">{lang === "en" ? "Sunday Bakery & Toast" : "جرد الأحد (مخبوزات وبيغل وتوست)"}</span>
+                    <span className="text-xl">🥐</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-xs leading-tight">
+                        {lang === "en" ? "Sunday Bakery" : "جرد الأحد (مخبوزات وبيغل وتوست)"}
+                      </div>
+                      <div className={`text-[10px] mt-0.5 ${customPreset === "sunday_bakery" ? "text-orange-100" : "text-slate-400"}`}>
+                        {lang === "en" ? "Donuts, Bagel & Toast" : "المخبوزات والبيغل والمفين"}
+                      </div>
+                    </div>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => productsQuery.data && applyPresetSelection("cups_packaging", productsQuery.data)}
-                    className={`px-2.5 py-2 text-xs font-bold rounded-xl border transition text-right flex items-center gap-1.5 ${
+                    className={`p-2.5 rounded-2xl border-2 transition text-right flex items-center gap-2.5 ${
                       customPreset === "cups_packaging"
-                        ? "bg-orange-500 text-white border-orange-500 shadow-sm"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                        ? "bg-orange-500 text-white border-orange-600 shadow-sm"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-orange-200"
                     }`}
                   >
-                    <span>🥤</span>
-                    <span className="truncate">{lang === "en" ? "Cups & Packaging" : "الأكواب ومواد التغليف"}</span>
+                    <span className="text-xl">🥤</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-xs leading-tight">
+                        {lang === "en" ? "Cups & Packaging" : "الأكواب ومواد التغليف"}
+                      </div>
+                      <div className={`text-[10px] mt-0.5 ${customPreset === "cups_packaging" ? "text-orange-100" : "text-slate-400"}`}>
+                        {lang === "en" ? "Hot/Cold Cups & Bags" : "أكواب، أغطية، أكياس"}
+                      </div>
+                    </div>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => productsQuery.data && applyPresetSelection("coffee_syrup", productsQuery.data)}
-                    className={`px-2.5 py-2 text-xs font-bold rounded-xl border transition text-right flex items-center gap-1.5 ${
+                    className={`p-2.5 rounded-2xl border-2 transition text-right flex items-center gap-2.5 ${
                       customPreset === "coffee_syrup"
-                        ? "bg-orange-500 text-white border-orange-500 shadow-sm"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                        ? "bg-orange-500 text-white border-orange-600 shadow-sm"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-orange-200"
                     }`}
                   >
-                    <span>☕</span>
-                    <span className="truncate">{lang === "en" ? "Coffee & Syrups" : "القهوة والمشروبات والسيروب"}</span>
+                    <span className="text-xl">☕</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-xs leading-tight">
+                        {lang === "en" ? "Coffee & Syrups" : "القهوة والمشروبات والسيروب"}
+                      </div>
+                      <div className={`text-[10px] mt-0.5 ${customPreset === "coffee_syrup" ? "text-orange-100" : "text-slate-400"}`}>
+                        {lang === "en" ? "Beans, Powders, Syrups" : "بن، صوصات، سيروب، شاي"}
+                      </div>
+                    </div>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => setCustomPreset("manual")}
-                    className={`px-2.5 py-2 text-xs font-bold rounded-xl border transition text-right flex items-center gap-1.5 ${
+                    className={`p-2.5 rounded-2xl border-2 transition text-right flex items-center gap-2.5 ${
                       customPreset === "manual"
-                        ? "bg-orange-500 text-white border-orange-500 shadow-sm"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                        ? "bg-orange-500 text-white border-orange-600 shadow-sm"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-orange-200"
                     }`}
                   >
-                    <span>✍️</span>
-                    <span className="truncate">{lang === "en" ? "Manual Selection" : "تحديد يدوي مخصص"}</span>
+                    <span className="text-xl">✍️</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-xs leading-tight">
+                        {lang === "en" ? "Manual Selection" : "تحديد يدوي حر"}
+                      </div>
+                      <div className={`text-[10px] mt-0.5 ${customPreset === "manual" ? "text-orange-100" : "text-slate-400"}`}>
+                        {lang === "en" ? "Pick specific items" : "اختر أي أصناف يدوياً"}
+                      </div>
+                    </div>
                   </button>
                 </div>
 
-                {/* صندوق البحث والتحديد التفاعلي */}
-                <div className="bg-white rounded-xl border border-orange-200/90 p-2.5 space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={pickerSearch}
-                      onChange={(e) => setPickerSearch(e.target.value)}
-                      placeholder={lang === "en" ? "Filter products..." : "ابحث لتحديد أصناف إضافية..."}
-                      className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-orange-400"
-                    />
+                {/* صندوق البحث والتحديد التفاعلي والمريح للجوال */}
+                <div className="bg-white rounded-2xl border border-orange-200 p-3 sm:p-4 space-y-3 shadow-xs">
+                  {/* شريط البحث والأزرار السريعة */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="relative flex-1 min-w-[200px]">
+                      <input
+                        type="text"
+                        value={pickerSearch}
+                        onChange={(e) => setPickerSearch(e.target.value)}
+                        placeholder={lang === "en" ? "Search product name, code or category..." : "ابحث باسم الصنف كاملاً، الكود، أو التصنيف..."}
+                        className="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-400 bg-slate-50/50"
+                      />
+                      {pickerSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setPickerSearch("")}
+                          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs w-5 h-5 rounded-full flex items-center justify-center bg-slate-200/70"
+                          title="مسح البحث"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => {
-                        if (!productsQuery.data) return;
-                        const filtered = productsQuery.data.filter((p) => {
-                          if (!pickerSearch.trim()) return true;
-                          const t = `${p.nameAr || ""} ${p.nameEn || ""} ${p.code} ${p.category}`.toLowerCase();
-                          return t.includes(pickerSearch.toLowerCase());
-                        });
                         setSelectedProductCodes((prev) => {
                           const next = new Set(prev);
-                          filtered.forEach((p) => next.add(p.code));
+                          pickerFilteredProducts.forEach((p) => next.add(p.code));
                           return next;
                         });
                       }}
-                      className="px-2 py-1 text-[11px] font-bold text-slate-600 hover:text-orange-600 bg-slate-100 rounded-lg hover:bg-orange-50 transition"
+                      className="px-3 py-2 text-xs font-bold text-orange-700 hover:text-orange-800 bg-orange-100/70 hover:bg-orange-100 rounded-xl transition flex items-center gap-1 active:scale-95"
                     >
-                      {lang === "en" ? "Select All" : "تحديد الكل"}
+                      <i className="ph-bold ph-check-square"></i>
+                      <span>{lang === "en" ? `Select (${pickerFilteredProducts.length})` : `تحديد المعروض (${pickerFilteredProducts.length})`}</span>
                     </button>
+
                     <button
                       type="button"
                       onClick={() => setSelectedProductCodes(new Set())}
-                      className="px-2 py-1 text-[11px] font-bold text-slate-500 hover:text-red-600 bg-slate-100 rounded-lg hover:bg-red-50 transition"
+                      className="px-3 py-2 text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100/80 rounded-xl transition flex items-center gap-1 active:scale-95"
                     >
-                      {lang === "en" ? "Clear" : "إلغاء"}
+                      <i className="ph-bold ph-trash"></i>
+                      <span>{lang === "en" ? "Clear" : "إلغاء التحديد"}</span>
                     </button>
                   </div>
 
-                  <div className="max-h-44 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
-                    {(productsQuery.data || [])
-                      .filter((p) => {
-                        if (!pickerSearch.trim()) return true;
-                        const t = `${p.nameAr || ""} ${p.nameEn || ""} ${p.code} ${p.category}`.toLowerCase();
-                        return t.includes(pickerSearch.toLowerCase());
-                      })
-                      .map((p) => {
-                        const isChecked = selectedProductCodes.has(p.code);
-                        return (
-                          <label
-                            key={p.code}
-                            className={`flex items-center gap-2 px-2.5 py-1.5 text-xs cursor-pointer hover:bg-orange-50/50 transition select-none ${
-                              isChecked ? "bg-orange-50/40 font-semibold" : ""
-                            }`}
-                          >
+                  {/* تبويبات الفلترة: الكل vs المحدد فقط + تصنيفات سريعة */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs scrollbar-none">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPickerOnlySelected(false);
+                        setPickerCategoryFilter("ALL");
+                      }}
+                      className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition flex items-center gap-1 shrink-0 ${
+                        !pickerOnlySelected && pickerCategoryFilter === "ALL"
+                          ? "bg-slate-900 text-white shadow-xs"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      <span>{lang === "en" ? "All Products" : "جميع الأصناف"}</span>
+                      <span className="opacity-70 text-[11px]">({(productsQuery.data || []).length})</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPickerOnlySelected((prev) => !prev)}
+                      className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition flex items-center gap-1.5 shrink-0 ${
+                        pickerOnlySelected
+                          ? "bg-orange-600 text-white shadow-xs"
+                          : "bg-orange-100/80 text-orange-800 hover:bg-orange-200"
+                      }`}
+                    >
+                      <span>⭐ {lang === "en" ? "Selected Only" : "الأصناف المحددة للجرد"}</span>
+                      <span className={`px-2 py-0.2 rounded-full text-[11px] font-black ${pickerOnlySelected ? "bg-white text-orange-700" : "bg-orange-200 text-orange-900"}`}>
+                        {selectedProductCodes.size}
+                      </span>
+                    </button>
+
+                    {pickerCategories.map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => {
+                          setPickerCategoryFilter((prev) => (prev === cat ? "ALL" : cat));
+                          setPickerOnlySelected(false);
+                        }}
+                        className={`px-2.5 py-1.5 rounded-xl font-medium whitespace-nowrap transition shrink-0 text-xs ${
+                          pickerCategoryFilter === cat && !pickerOnlySelected
+                            ? "bg-orange-500 text-white font-bold"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* قائمة الأصناف مع الأسماء كاملة والصور وتنسيق مريح للجوال */}
+                  <div className="max-h-80 sm:max-h-96 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-2xl p-1 bg-slate-50/30">
+                    {pickerFilteredProducts.map((p) => {
+                      const isChecked = selectedProductCodes.has(p.code);
+                      return (
+                        <label
+                          key={p.code}
+                          className={`flex items-start gap-3 p-3 rounded-2xl transition cursor-pointer select-none ${
+                            isChecked
+                              ? "bg-orange-50/90 border border-orange-300 shadow-xs"
+                              : "hover:bg-white hover:shadow-xs border border-transparent"
+                          }`}
+                        >
+                          <div className="pt-1 shrink-0">
                             <input
                               type="checkbox"
                               checked={isChecked}
@@ -884,18 +1004,79 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
                                   return next;
                                 });
                               }}
-                              className="w-4 h-4 rounded text-orange-500 focus:ring-orange-400 accent-orange-500"
+                              className="w-5 h-5 rounded-md text-orange-500 focus:ring-orange-400 accent-orange-500 cursor-pointer"
                             />
-                            <div className="flex-1 truncate">
-                              <span className="text-slate-800">{getProductName(p)}</span>
-                              <span className="text-[10px] text-slate-400 ml-1 mr-1">({p.code})</span>
+                          </div>
+
+                          {/* صورة المنتج */}
+                          <div className="w-12 h-12 rounded-xl overflow-hidden bg-white border border-slate-200 shrink-0 shadow-xs">
+                            <img
+                              src={getProductImage(p)}
+                              alt={getProductName(p)}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          </div>
+
+                          {/* تفاصيل الصنف كاملة ومقروءة بدون أي اقتطاع */}
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-bold text-slate-900 text-sm leading-snug break-words whitespace-normal">
+                              {getProductName(p)}
+                            </h4>
+
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                              <span className="font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-bold">
+                                #{p.code}
+                              </span>
+                              <span className="bg-orange-100/90 text-orange-800 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                {p.category}
+                              </span>
+                              <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded text-[10px]">
+                                {p.unitLabel}
+                              </span>
+                              {p.packSize && p.packSize > 1 ? (
+                                <span className="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                  📦 {p.packSize} حبة/كرتون
+                                </span>
+                              ) : null}
+                              {p.qty !== null && (
+                                <span className="text-[10px] text-slate-500 font-medium">
+                                  (المخزون: {p.qty})
+                                </span>
+                              )}
                             </div>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">
-                              {p.category}
-                            </span>
-                          </label>
-                        );
-                      })}
+                          </div>
+
+                          {isChecked && (
+                            <div className="shrink-0 self-center">
+                              <span className="w-6 h-6 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-bold shadow-xs">
+                                ✓
+                              </span>
+                            </div>
+                          )}
+                        </label>
+                      );
+                    })}
+
+                    {pickerFilteredProducts.length === 0 && (
+                      <div className="text-center py-10 px-4 space-y-2">
+                        <span className="text-3xl block">🔍</span>
+                        <p className="text-xs sm:text-sm font-bold text-slate-600">
+                          {lang === "en" ? "No products found matching your filter" : "لا توجد أصناف تطابق البحث أو الفلتر الحالي"}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPickerSearch("");
+                            setPickerCategoryFilter("ALL");
+                            setPickerOnlySelected(false);
+                          }}
+                          className="text-xs text-orange-600 hover:underline font-bold"
+                        >
+                          {lang === "en" ? "Reset filters" : "إعادة تعيين الفلاتر"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1686,23 +1867,38 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
                 })
                 .slice(0, 40)
                 .map((prod) => (
-                  <div key={prod.code} className="py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50 px-2 rounded-xl transition">
+                  <div key={prod.code} className="py-3 flex items-start justify-between gap-3 hover:bg-slate-50 px-2 rounded-2xl transition border-b border-slate-100 last:border-b-0">
+                    {/* صورة الصنف */}
+                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 shadow-xs">
+                      <img
+                        src={getProductImage(prod)}
+                        alt={getProductName(prod)}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+
                     <div className="min-w-0 flex-1">
-                      <div className="font-bold text-slate-800 text-sm truncate">{getProductName(prod)}</div>
-                      <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 flex-wrap">
-                        <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[11px] text-slate-600">{prod.code}</span>
-                        <span>•</span>
-                        <span>{prod.category}</span>
-                        <span>•</span>
-                        <span className="text-orange-600 font-medium">
+                      <h4 className="font-bold text-slate-900 text-sm leading-snug break-words whitespace-normal">
+                        {getProductName(prod)}
+                      </h4>
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-1 flex-wrap">
+                        <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[11px] text-slate-700 font-bold">
+                          #{prod.code}
+                        </span>
+                        <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                          {prod.category}
+                        </span>
+                        <span className="text-orange-600 font-semibold text-[11px]">
                           المخزون الحالي: {prod.qty ?? (prod.packs ? `${prod.packs} كرتون` : "0")} {prod.unitLabel}
                         </span>
                       </div>
                     </div>
+
                     <button
                       type="button"
                       onClick={() => addProductToCurrentAudit(prod)}
-                      className="px-3.5 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs shadow-sm transition shrink-0 flex items-center gap-1 active:scale-95"
+                      className="px-3 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs shadow-sm transition shrink-0 flex items-center gap-1 active:scale-95"
                     >
                       <span>+</span>
                       <span>{lang === "en" ? "Add to Audit" : "إضافة للجرد"}</span>
