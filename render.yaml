@@ -15,5 +15,9 @@ services:
         value: https://ominfwrmptjxjdxqqdts.supabase.co
       - key: VITE_SUPABASE_ANON_KEY
         value: sb_publishable_r6GduVnOGpx1Dt4J0v6ncg_M2VYKcZf
+      - key: APP_ID
+        value: dunkin-app
+      - key: APP_SECRET
+        value: dunkin-secret-12345
       - key: DATABASE_URL
         value: postgresql://postgres:Aa11788%4011788@db.ominfwrmptjxjdxqqdts.supabase.co:5432/postgres
