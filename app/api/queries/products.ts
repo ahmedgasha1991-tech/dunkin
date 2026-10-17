@@ -285,6 +285,7 @@ export async function addProduct(input: {
   unitCode: "CTN" | "PKT" | "PCS";
   unitLabel: string;
   imageUrl?: string | null;
+  qty?: number | null;
 }) {
   const normalizedImageUrl = normalizeOptionalImageUrl(input.imageUrl);
   const newId = memoryProducts.length > 0 ? Math.max(...memoryProducts.map((p) => p.id)) + 1 : 1;
@@ -297,7 +298,7 @@ export async function addProduct(input: {
     nameEn: input.nameEn,
     category: input.category,
     mode: input.mode,
-    qty: null,
+    qty: input.qty ?? null,
     packs: null,
     packSize: null,
     loose: null,
@@ -317,7 +318,7 @@ export async function addProduct(input: {
 
   try {
     const db = getDb();
-    await db.insert(products).values({ ...input, imageUrl: normalizedImageUrl, sortOrder: nextSort });
+    await db.insert(products).values({ ...input, imageUrl: normalizedImageUrl, sortOrder: nextSort, qty: input.qty ?? null });
   } catch (err) {
     console.warn("DB insert fallback to memory:", err);
   }

@@ -103,6 +103,7 @@ export const inventoryRouter = createRouter({
         unitCode,
         unitLabel: z.string().min(1),
         imageUrl: optionalNullableImageUrl,
+        qty: z.number().int().min(0).nullable().optional(),
       }),
     )
     .mutation(async ({ input }) => {

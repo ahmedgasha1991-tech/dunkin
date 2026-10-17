@@ -1960,6 +1960,7 @@ export function AddProductModal({
     unitCode: "CTN" | "PKT" | "PCS";
     unitLabel: string;
     imageUrl?: string | null;
+    qty?: number | null;
   }) => void;
   isLoading: boolean;
 }) {
@@ -1968,6 +1969,7 @@ export function AddProductModal({
   const [code, setCode] = useState(product?.code ?? "");
   const [nameAr, setNameAr] = useState(product?.nameAr ?? "");
   const [nameEn, setNameEn] = useState(product?.nameEn ?? "");
+  const [initialQty, setInitialQty] = useState(product?.qty != null ? String(product.qty) : "");
   const [imageUrl, setImageUrl] = useState(
     product?.imageUrl || (product?.code ? getUploadedProductImage(product.code) : "") || ""
   );
@@ -2155,6 +2157,32 @@ export function AddProductModal({
               <option value="detailed">{lang === "en" ? "Detailed Composite (Packets + Loose Pieces)" : "جرد مركب تفصيلي (باكيتات + حبات مفرطة)"}</option>
             </select>
           </div>
+
+          {/* Initial Stock Quantity Field */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">
+              {lang === "en" ? "Initial Available Stock Quantity (Optional)" : "الكمية المتوفرة بالمخزن حالياً (اختياري)"}
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                value={initialQty}
+                onChange={(e) => setInitialQty(e.target.value)}
+                placeholder={lang === "en" ? "e.g. 50 (leave empty if 0 / out of stock)" : "مثال: 50 (اتركه فارغاً إذا كان الصنف نافداً حالياً)"}
+                disabled={isLoading}
+                className={fieldCls}
+              />
+              <span className={`absolute ${lang === 'ar' ? 'left-3' : 'right-3'} top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none`}>
+                {unitCode}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {lang === "en"
+                ? "If entered greater than 0, the item will show as 'In Stock' immediately."
+                : "إذا قمت بإدخال كمية أكبر من صفر، فسيظهر الصنف بحالة 'متوفر' مباشرة بدلاً من 'نفد'."}
+            </p>
+          </div>
         </div>
         <div className="p-6 border-t border-slate-100 flex gap-3 bg-white rounded-b-3xl">
           <button onClick={onClose} disabled={isLoading} className="flex-1 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-50 text-slate-700 font-bold py-3.5 rounded-xl transition">
@@ -2162,7 +2190,17 @@ export function AddProductModal({
           </button>
           <button
             disabled={!valid || isLoading}
-            onClick={() => onSave({ code: code.trim(), nameAr: nameAr.trim(), nameEn: nameEn.trim(), category, mode, unitCode, unitLabel: unitLabels[unitCode], imageUrl: imageUrl.trim() || null })}
+            onClick={() => onSave({
+              code: code.trim(),
+              nameAr: nameAr.trim(),
+              nameEn: nameEn.trim(),
+              category,
+              mode,
+              unitCode,
+              unitLabel: unitLabels[unitCode],
+              imageUrl: imageUrl.trim() || null,
+              qty: initialQty.trim() !== "" ? parseInt(initialQty, 10) : null,
+            })}
             className="flex-[2] bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"
           >
             {isLoading ? (
