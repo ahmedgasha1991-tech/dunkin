@@ -50,26 +50,68 @@ function toNullableNumber(value: string | number | null | undefined) {
 
 const activeImagesMap = loadImagesMapping();
 
-let memoryProducts: Product[] = seedProducts.map((p, index) => ({
-  id: index + 1,
-  code: p.code,
-  nameAr: p.name_ar,
-  nameEn: p.name_en,
-  category: p.category,
-  mode: p.mode === "detailed" ? "detailed" : "simple",
-  qty: toNullableNumber(p.qty),
-  packs: toNullableNumber(p.packs),
-  packSize: toNullableNumber(p.pack_size),
-  loose: toNullableNumber(p.loose),
-  orderQty: null,
-  unitCode: (p.unit_code === "CTN" || p.unit_code === "PKT" || p.unit_code === "PCS" ? p.unit_code : "PCS") as "CTN" | "PKT" | "PCS",
-  unitLabel: p.unit_label,
-  imageUrl: activeImagesMap[p.code] || null,
-  sortOrder: index + 1,
-  isHidden: false,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-}));
+function getProductsStoreFilePath() {
+  const p1 = path.resolve(process.cwd(), "src/data/products_store.json");
+  if (fs.existsSync(p1)) return p1;
+  const p2 = path.resolve(process.cwd(), "app/src/data/products_store.json");
+  if (fs.existsSync(p2)) return p2;
+  return p1;
+}
+
+function loadProductsStore(): Product[] {
+  try {
+    const jsonPath = getProductsStoreFilePath();
+    if (fs.existsSync(jsonPath)) {
+      const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((p: any) => ({
+          ...p,
+          createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+          updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date(),
+        }));
+      }
+    }
+  } catch (e) {
+    console.warn("Could not read products_store.json:", e);
+  }
+
+  // Fallback to initial seed products
+  return seedProducts.map((p, index) => ({
+    id: index + 1,
+    code: p.code,
+    nameAr: p.name_ar,
+    nameEn: p.name_en,
+    category: p.category,
+    mode: p.mode === "detailed" ? "detailed" : "simple",
+    qty: toNullableNumber(p.qty),
+    packs: toNullableNumber(p.packs),
+    packSize: toNullableNumber(p.pack_size),
+    loose: toNullableNumber(p.loose),
+    orderQty: null,
+    unitCode: (p.unit_code === "CTN" || p.unit_code === "PKT" || p.unit_code === "PCS" ? p.unit_code : "PCS") as "CTN" | "PKT" | "PCS",
+    unitLabel: p.unit_label,
+    imageUrl: activeImagesMap[p.code] || null,
+    sortOrder: index + 1,
+    isHidden: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }));
+}
+
+export function saveProductsStore(items: Product[]) {
+  try {
+    const jsonPath = getProductsStoreFilePath();
+    const dir = path.dirname(jsonPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(jsonPath, JSON.stringify(items, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("Could not save to products_store.json:", e);
+  }
+}
+
+let memoryProducts: Product[] = loadProductsStore();
 
 let memorySnapshots: Array<{ id: number; period: "weekly" | "monthly"; capturedAt: Date; data: string }> = [];
 
@@ -87,26 +129,65 @@ export async function listProducts(): Promise<Product[]> {
   try {
     const res = await Promise.race([
       getDb().select().from(products).orderBy(asc(products.sortOrder), asc(products.id)),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB Timeout")), 2500))
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB Timeout")), 5000))
     ]);
+
     if (res && res.length > 0) {
-      memoryProducts = res.map((p) => ({
-        ...p,
-        lastStockUpdate: lastStockUpdates[p.id] || null,
-      }));
+      // Smart merge: Do NOT overwrite valid non-null quantities or added products with null!
+      const dbMap = new Map(res.map((p) => [p.code, p]));
+      const merged: Product[] = [];
+
+      // 1. Keep all current memory products, merging DB fields safely
+      for (const mem of memoryProducts) {
+        const dbProd = dbMap.get(mem.code);
+        if (dbProd) {
+          dbMap.delete(mem.code);
+          // Only take DB qty if DB actually has a non-null value, otherwise keep memory qty!
+          const effectiveQty = dbProd.qty !== null ? dbProd.qty : mem.qty;
+          const effectivePacks = dbProd.packs !== null ? dbProd.packs : mem.packs;
+          const effectiveLoose = dbProd.loose !== null ? dbProd.loose : mem.loose;
+          const effectiveOrder = dbProd.orderQty !== null ? dbProd.orderQty : mem.orderQty;
+
+          merged.push({
+            ...dbProd,
+            id: mem.id, // keep consistent id
+            qty: effectiveQty,
+            packs: effectivePacks,
+            loose: effectiveLoose,
+            orderQty: effectiveOrder,
+            lastStockUpdate: lastStockUpdates[mem.id] || null,
+          });
+        } else {
+          // Newly added product in memory that might not be in DB yet -> KEEP IT!
+          merged.push({
+            ...mem,
+            lastStockUpdate: lastStockUpdates[mem.id] || null,
+          });
+        }
+      }
+
+      // 2. Any additional products in DB not in memory
+      dbMap.forEach((dbProd) => {
+        const nextId = merged.length > 0 ? Math.max(...merged.map((x) => x.id)) + 1 : 1;
+        merged.push({
+          ...dbProd,
+          id: nextId,
+          lastStockUpdate: null,
+        });
+      });
+
+      memoryProducts = merged;
+      saveProductsStore(memoryProducts);
       return memoryProducts;
     }
-    return memoryProducts.map((p) => ({
-      ...p,
-      lastStockUpdate: lastStockUpdates[p.id] || null,
-    }));
   } catch (err) {
-    console.warn("DB connection timeout/error, serving fallback 256 products catalog:", err);
-    return memoryProducts.map((p) => ({
-      ...p,
-      lastStockUpdate: lastStockUpdates[p.id] || null,
-    }));
+    console.warn("DB connection timeout/error, serving stored catalog:", err);
   }
+
+  return memoryProducts.map((p) => ({
+    ...p,
+    lastStockUpdate: lastStockUpdates[p.id] || null,
+  }));
 }
 
 export async function updateProduct(
@@ -188,11 +269,12 @@ export async function updateProduct(
         }
       : p
   );
+  saveProductsStore(memoryProducts);
 
   try {
     await getDb().update(products).set(fields).where(eq(products.id, id));
   } catch (err) {
-    console.warn("DB update fallback to memory:", err);
+    console.warn("DB update fallback to memory & disk:", err);
   }
 }
 
@@ -267,6 +349,7 @@ export async function receiveOrderItems(
     }
   }
 
+  saveProductsStore(memoryProducts);
   return { ok: true, count: updatedItems.length, updatedItems };
 }
 
@@ -316,6 +399,8 @@ export async function addProduct(input: {
   };
 
   memoryProducts.push(newProd);
+  saveProductsStore(memoryProducts);
+
   if (normalizedImageUrl) {
     saveImageMapping(input.code, normalizedImageUrl);
   }
@@ -324,13 +409,13 @@ export async function addProduct(input: {
     const db = getDb();
     await db.insert(products).values({ ...input, isHidden, imageUrl: normalizedImageUrl, sortOrder: nextSort, qty: input.qty ?? null });
   } catch (err) {
-    console.warn("DB insert fallback to memory:", err);
+    console.warn("DB insert fallback to memory & disk:", err);
   }
 }
 
 export async function editProduct(
   id: number,
-  fields: Partial<Pick<typeof products.$inferInsert, "code" | "nameAr" | "nameEn" | "category" | "mode" | "unitCode" | "unitLabel" | "imageUrl" | "isHidden">>,
+  fields: Partial<Pick<typeof products.$inferInsert, "code" | "nameAr" | "nameEn" | "category" | "mode" | "unitCode" | "unitLabel" | "imageUrl" | "isHidden" | "qty">>,
 ) {
   const current = memoryProducts.find((p) => p.id === id);
   const normalizedImageUrl = fields.imageUrl === undefined ? undefined : normalizeOptionalImageUrl(fields.imageUrl);
@@ -355,11 +440,12 @@ export async function editProduct(
     }
     return p;
   });
+  saveProductsStore(memoryProducts);
 
   try {
     await getDb().update(products).set(normalizedFields).where(eq(products.id, id));
   } catch (err) {
-    console.warn("DB edit fallback to memory:", err);
+    console.warn("DB edit fallback to memory & disk:", err);
   }
 }
 
@@ -374,11 +460,12 @@ export async function toggleProductVisibility(id: number, isHidden: boolean) {
     }
     return p;
   });
+  saveProductsStore(memoryProducts);
 
   try {
     await getDb().update(products).set({ isHidden }).where(eq(products.id, id));
   } catch (err) {
-    console.warn("DB toggleProductVisibility fallback to memory:", err);
+    console.warn("DB toggleProductVisibility fallback to memory & disk:", err);
   }
   return { ok: true, id, isHidden };
 }
@@ -389,10 +476,12 @@ export async function deleteProduct(id: number) {
     saveImageMapping(current.code, null);
   }
   memoryProducts = memoryProducts.filter((p) => p.id !== id);
+  saveProductsStore(memoryProducts);
+
   try {
     await getDb().delete(products).where(eq(products.id, id));
   } catch (err) {
-    console.warn("DB delete fallback to memory:", err);
+    console.warn("DB delete fallback to memory & disk:", err);
   }
 }
 

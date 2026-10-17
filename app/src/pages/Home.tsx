@@ -104,14 +104,41 @@ export default function Home() {
 
   useEffect(() => {
     if (listQuery.data && listQuery.data.length > 0) {
-      setItems(listQuery.data);
-      saveCachedProducts(listQuery.data);
+      setItems((prev) => {
+        if (!prev || prev.length === 0) {
+          saveCachedProducts(listQuery.data);
+          return listQuery.data;
+        }
+        // Smart merge: preserve local non-null quantities if server returns null/empty
+        const merged = listQuery.data.map((serverProd) => {
+          const local = prev.find((x) => x.id === serverProd.id || x.code === serverProd.code);
+          if (local) {
+            const hasServerQty = serverProd.qty != null && serverProd.qty > 0;
+            const hasLocalQty = local.qty != null && local.qty > 0;
+            const effectiveQty = hasServerQty ? serverProd.qty : (hasLocalQty ? local.qty : serverProd.qty);
+            const effectivePacks = serverProd.packs != null ? serverProd.packs : local.packs;
+            const effectiveLoose = serverProd.loose != null ? serverProd.loose : local.loose;
+            const effectiveOrder = serverProd.orderQty != null ? serverProd.orderQty : local.orderQty;
+
+            return {
+              ...serverProd,
+              qty: effectiveQty,
+              packs: effectivePacks,
+              loose: effectiveLoose,
+              orderQty: effectiveOrder,
+            };
+          }
+          return serverProd;
+        });
+        saveCachedProducts(merged);
+        return merged;
+      });
     }
   }, [listQuery.data]);
 
   const updateMut = trpc.inventory.update.useMutation({
     onSuccess: () => {
-      utils.inventory.list.invalidate();
+      // Optimistic local state is already saved; avoid full list reload on keystroke
     },
     onError: (_err, variables) => {
       // Queue offline mutation if failed due to network or server disconnect

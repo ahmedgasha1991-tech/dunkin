@@ -126,6 +126,7 @@ export const inventoryRouter = createRouter({
         unitCode: unitCode.optional(),
         unitLabel: z.string().min(1).optional(),
         imageUrl: optionalNullableImageUrl,
+        qty: z.number().int().min(0).nullable().optional(),
         isHidden: z.boolean().optional(),
       }),
     )
