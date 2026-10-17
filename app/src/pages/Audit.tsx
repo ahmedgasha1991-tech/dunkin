@@ -568,7 +568,7 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
   // ════════════════════════════════════════════════════════════════════════════
 
   return (
-    <div className="min-h-screen bg-slate-50" dir={lang === "ar" ? "rtl" : "ltr"}>
+    <div className="min-h-screen bg-slate-50 w-full max-w-full overflow-x-hidden" dir={lang === "ar" ? "rtl" : "ltr"}>
       {/* Offline Status Banner */}
       <OfflineBanner />
 
@@ -580,53 +580,56 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
       )}
 
       {/* ─── Header ─────────────────────────────────────────────────────── */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm w-full">
+        <div className="max-w-7xl mx-auto px-2 sm:px-4 h-16 flex items-center justify-between gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               id="btn-back-home"
               onClick={() => navigate("/")}
-              className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors shrink-0"
               title={lang === "en" ? "Back to Home" : "العودة للرئيسية"}
             >
-              <svg className={`w-5 h-5 ${lang === 'ar' ? '' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className={`w-4 h-4 sm:w-5 sm:h-5 ${lang === 'ar' ? '' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
-            <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-orange-500/30">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-orange-500 rounded-xl flex items-center justify-center text-white shadow-md shadow-orange-500/30 shrink-0">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               </svg>
             </div>
-            <div>
-              <h1 className="text-lg font-extrabold text-slate-800 leading-none">
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-lg font-extrabold text-slate-800 leading-tight truncate">
                 {t("operationalAudit")}
               </h1>
-              <p className="text-[11px] text-orange-600 font-bold mt-0.5">
+              <p className="text-[10px] sm:text-[11px] text-orange-600 font-bold mt-0.5 truncate">
                 {auditType === "weekly"
-                  ? (lang === "en" ? "🗓 Weekly Audit — Fast Consumables" : "🗓 أسبوعي — مواد سريعة الاستهلاك")
-                  : (lang === "en" ? "📦 Monthly Audit — All Items" : "📦 شهري — جميع الأصناف")}
+                  ? (lang === "en" ? "🗓 Weekly — Fast Consumables" : "🗓 أسبوعي — مواد سريعة")
+                  : auditType === "monthly"
+                  ? (lang === "en" ? "📦 Monthly — All Items" : "📦 شهري — جميع الأصناف")
+                  : (lang === "en" ? "🥐 Custom — Bakery/Picked" : "🥐 مخصص — مخبوزات وتحديد")}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* تبديل اللغة - حجم ذكي متوافق مع شاشة الجوال */}
             <button
               onClick={toggleLang}
               title={t("langTitle")}
-              className="bg-blue-600 text-white hover:bg-blue-700 px-3.5 py-2 rounded-xl font-extrabold transition flex items-center gap-1.5 shadow-md text-xs md:text-sm"
+              className="bg-blue-600 text-white hover:bg-blue-700 px-2 sm:px-3.5 py-1.5 sm:py-2 rounded-xl font-extrabold transition flex items-center gap-1 shadow-sm text-xs sm:text-sm shrink-0"
             >
-              <i className="ph-bold ph-globe text-lg"></i>
-              <span>{t("langBtn")}</span>
+              <i className="ph-bold ph-globe text-sm sm:text-lg"></i>
+              <span className="hidden sm:inline">{t("langBtn")}</span>
+              <span className="sm:hidden font-mono">{lang === "ar" ? "EN" : "عربي"}</span>
             </button>
 
             {phase === "inputting" || phase === "draft" ? (
-
               <>
                 <button
                   id="btn-export-pdf"
                   onClick={exportPdf}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 transition-colors text-sm font-bold"
+                  className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 transition-colors text-sm font-bold shrink-0"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -636,10 +639,11 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
                 <button
                   id="btn-share-audit"
                   onClick={shareAudit}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors text-sm font-bold"
+                  className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors text-xs sm:text-sm font-bold shrink-0"
+                  title={lang === "en" ? "Share" : "مشاركة"}
                 >
-                  <i className="ph-bold ph-share-network"></i>
-                  {lang === "en" ? "Share" : "مشاركة"}
+                  <i className="ph-bold ph-share-network text-sm sm:text-base"></i>
+                  <span className="hidden md:inline">{lang === "en" ? "Share" : "مشاركة"}</span>
                 </button>
                 <button
                   id="btn-save-draft"
@@ -648,17 +652,18 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
                     saveDraftMut.mutate({ auditId, items: buildPayload(), notes: generalNotes });
                   }}
                   disabled={saveDraftMut.isPending}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors text-sm font-bold disabled:opacity-50"
+                  className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors text-sm font-bold disabled:opacity-50 shrink-0"
                 >
                   {saveDraftMut.isPending ? (lang === "en" ? "Saving..." : "جاري...") : (lang === "en" ? "💾 Save Draft" : "💾 حفظ مسودة")}
                 </button>
                 <button
                   id="btn-send-audit-admin"
                   onClick={handleSendAuditToAdmin}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors text-sm font-black shadow-md"
+                  className="flex items-center gap-1 px-2 sm:px-3.5 py-1.5 sm:py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors text-xs sm:text-sm font-black shadow-md shrink-0"
+                  title={lang === "en" ? "Send to Admin" : "إرسال للأدمن"}
                 >
-                  <i className="ph-bold ph-paper-plane-tilt"></i>
-                  {lang === "en" ? "Send to Admin 🚀" : "إرسال للأدمن 🚀"}
+                  <i className="ph-bold ph-paper-plane-tilt text-sm sm:text-base"></i>
+                  <span className="hidden md:inline">{lang === "en" ? "Send to Admin 🚀" : "إرسال للأدمن 🚀"}</span>
                 </button>
                 <button
                   id="btn-finalize"
@@ -667,7 +672,7 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
                     finalizeMut.mutate({ auditId, items: buildPayload(), notes: generalNotes });
                   }}
                   disabled={finalizeMut.isPending}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors text-sm font-bold disabled:opacity-50 shadow-lg shadow-green-600/30"
+                  className="hidden md:flex items-center gap-1.5 px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors text-sm font-bold disabled:opacity-50 shadow-lg shadow-green-600/30 shrink-0"
                 >
                   {finalizeMut.isPending ? (lang === "en" ? "Saving..." : "جاري...") : (lang === "en" ? "✅ Finalize Audit" : "✅ اعتماد نهائي")}
                 </button>
@@ -676,9 +681,11 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
             <button
               id="btn-history"
               onClick={() => setShowHistory(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors text-sm font-bold"
+              className="flex items-center gap-1 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors text-xs sm:text-sm font-bold shrink-0"
+              title={lang === "en" ? "History" : "السجل"}
             >
-              📋 {lang === "en" ? "History" : "السجل"}
+              <i className="ph-bold ph-clock-counter-clockwise text-sm sm:text-base"></i>
+              <span className="hidden sm:inline">{lang === "en" ? "History" : "السجل"}</span>
             </button>
           </div>
         </div>
@@ -983,65 +990,69 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
 
       {/* ─── Main Input Table ────────────────────────────────────────────── */}
       {(phase === "inputting" || phase === "draft") && (
-        <div className="max-w-7xl mx-auto px-4 mt-6 pb-24">
+        <div className="max-w-7xl mx-auto px-2 sm:px-4 mt-3 sm:mt-6 pb-28 w-full">
           {/* إحصائيات سريعة */}
-          <div className="grid grid-cols-3 gap-4 mb-5">
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 text-center">
-              <div className="text-2xl font-extrabold text-slate-800">{rows.length}</div>
-              <div className="text-xs text-slate-500 font-medium mt-1">{lang === "en" ? "Total Items" : "إجمالي الأصناف"}</div>
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-3 sm:mb-5">
+            <div className="bg-white rounded-2xl border border-slate-200 p-2.5 sm:p-4 text-center shadow-xs">
+              <div className="text-lg sm:text-2xl font-black text-slate-800">{rows.length}</div>
+              <div className="text-[10px] sm:text-xs text-slate-500 font-bold mt-0.5 sm:mt-1 truncate">{lang === "en" ? "Total Items" : "إجمالي الأصناف"}</div>
             </div>
-            <div className="bg-white rounded-2xl border border-slate-200 p-4 text-center">
-              <div className="text-2xl font-extrabold text-blue-600">{filledCount}</div>
-              <div className="text-xs text-slate-500 font-medium mt-1">{lang === "en" ? "Counted Items" : "تم رصدها"}</div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-2.5 sm:p-4 text-center shadow-xs">
+              <div className="text-lg sm:text-2xl font-black text-blue-600">{filledCount}</div>
+              <div className="text-[10px] sm:text-xs text-slate-500 font-bold mt-0.5 sm:mt-1 truncate">{lang === "en" ? "Counted" : "تم رصدها"}</div>
             </div>
-            <div className={`rounded-2xl border p-4 text-center ${deficitCount > 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}>
-              <div className={`text-2xl font-extrabold ${deficitCount > 0 ? "text-red-600" : "text-green-600"}`}>
+            <div className={`rounded-2xl border p-2.5 sm:p-4 text-center shadow-xs ${deficitCount > 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}>
+              <div className={`text-lg sm:text-2xl font-black ${deficitCount > 0 ? "text-red-600" : "text-green-600"}`}>
                 {deficitCount}
               </div>
-              <div className="text-xs text-slate-500 font-medium mt-1">{lang === "en" ? "Items with Deficit" : "أصناف بعجز"}</div>
+              <div className="text-[10px] sm:text-xs text-slate-500 font-bold mt-0.5 sm:mt-1 truncate">{lang === "en" ? "Deficits" : "أصناف بعجز"}</div>
             </div>
           </div>
 
           {/* أدوات البحث والفلترة وإضافة الأصناف */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4 mb-4 flex flex-wrap items-center gap-3">
-            <input
-              id="audit-search"
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={lang === "en" ? "Search item name or code..." : "بحث باسم الصنف أو الكود..."}
-              className="flex-1 min-w-[180px] px-3 py-2 text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-400"
-            />
-            <select
-              id="audit-cat-filter"
-              value={catFilter}
-              onChange={(e) => setCatFilter(e.target.value)}
-              className="px-3 py-2 text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-            >
-              <option value="ALL">{t("allCategories")}</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-            <button
-              id="btn-open-add-product"
-              type="button"
-              onClick={() => {
-                setAddProductSearch("");
-                setShowAddProductModal(true);
-              }}
-              className="flex items-center gap-1 px-3.5 py-2 text-xs md:text-sm font-black rounded-xl bg-orange-600 hover:bg-orange-700 text-white shadow-md transition-all active:scale-95 shrink-0"
-            >
-              <i className="ph-bold ph-plus-circle text-base"></i>
-              <span>{lang === "en" ? "+ Add Item to Audit" : "+ إضافة صنف للجرد"}</span>
-            </button>
-            {phase === "draft" && (
-              <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold border border-amber-200">
-                📝 {lang === "en" ? "Saved Draft" : "مسودة محفوظة"}
-              </span>
-            )}
+          <div className="bg-white rounded-2xl border border-slate-200 p-2.5 sm:p-4 mb-3 sm:mb-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 shadow-xs">
+            <div className="flex-1 flex items-center gap-1.5 sm:gap-2 min-w-0">
+              <input
+                id="audit-search"
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={lang === "en" ? "Search item name or code..." : "بحث باسم الصنف أو الكود..."}
+                className="flex-1 min-w-0 px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-400 bg-slate-50/50"
+              />
+              <select
+                id="audit-cat-filter"
+                value={catFilter}
+                onChange={(e) => setCatFilter(e.target.value)}
+                className="w-28 sm:w-auto px-2 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white shrink-0"
+              >
+                <option value="ALL">{t("allCategories")}</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <button
+                id="btn-open-add-product"
+                type="button"
+                onClick={() => {
+                  setAddProductSearch("");
+                  setShowAddProductModal(true);
+                }}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-1 px-3 py-2 text-xs sm:text-sm font-black rounded-xl bg-orange-600 hover:bg-orange-700 text-white shadow-xs transition-all active:scale-95"
+              >
+                <i className="ph-bold ph-plus-circle text-base"></i>
+                <span>{lang === "en" ? "+ Add Item" : "+ إضافة صنف للجرد"}</span>
+              </button>
+              {phase === "draft" && (
+                <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-100 text-amber-700 text-xs font-bold border border-amber-200 shrink-0">
+                  📝 {lang === "en" ? "Draft" : "مسودة"}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* ─── عرض الجوال: بطاقات مريحة للمس والعد الميداني ─── */}
@@ -1481,20 +1492,26 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
           </div>
 
           {/* أزرار الحفظ الثابتة في الأسفل */}
-          <div className="fixed bottom-0 right-0 left-0 bg-white border-t border-slate-200 px-4 py-3 flex justify-between items-center gap-3 z-20">
-            <div className="text-sm text-slate-500">
-              تم رصد <strong className="text-blue-600">{filledCount}</strong> من{" "}
-              <strong>{rows.length}</strong> صنف
+          <div className="fixed bottom-0 right-0 left-0 bg-white/95 backdrop-blur-md border-t border-slate-200 px-3 sm:px-4 py-2.5 sm:py-3 flex justify-between items-center gap-2 z-30 shadow-lg">
+            <div className="text-xs sm:text-sm text-slate-600 min-w-0">
+              <span className="font-medium hidden sm:inline">{lang === "en" ? "Counted " : "تم رصد "}</span>
+              <strong className="text-blue-600 font-black">{filledCount}</strong>
+              <span className="text-slate-400 font-bold">/{rows.length}</span>
+              <span className="hidden sm:inline"> {lang === "en" ? "items" : "صنف"}</span>
               {deficitCount > 0 && (
-                <> — <strong className="text-red-600">{deficitCount} عجز</strong></>
+                <span className="mr-1 text-red-600 font-black whitespace-nowrap">
+                  ({deficitCount} {lang === "en" ? "deficit" : "عجز"})
+                </span>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 onClick={exportPdf}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 transition-colors text-sm font-bold"
+                className="flex items-center gap-1 px-2.5 sm:px-3 py-2 rounded-xl bg-orange-50 text-orange-600 border border-orange-200 hover:bg-orange-100 transition-colors text-xs sm:text-sm font-bold active:scale-95"
+                title={lang === "en" ? "Export PDF" : "تصدير تقرير PDF"}
               >
-                📄 PDF
+                <i className="ph-bold ph-file-pdf text-sm sm:text-base"></i>
+                <span>PDF</span>
               </button>
               <button
                 disabled={saveDraftMut.isPending}
@@ -1502,9 +1519,10 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
                   if (!auditId) return;
                   saveDraftMut.mutate({ auditId, items: buildPayload(), notes: generalNotes });
                 }}
-                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors text-sm font-bold disabled:opacity-50"
+                className="px-2.5 sm:px-4 py-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors text-xs sm:text-sm font-bold disabled:opacity-50 active:scale-95 flex items-center gap-1"
               >
-                {saveDraftMut.isPending ? "..." : "💾 مسودة"}
+                <i className="ph-bold ph-floppy-disk text-sm sm:text-base"></i>
+                <span>{saveDraftMut.isPending ? "..." : (lang === "en" ? "Draft" : "مسودة")}</span>
               </button>
               <button
                 disabled={finalizeMut.isPending}
@@ -1512,9 +1530,10 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
                   if (!auditId) return;
                   finalizeMut.mutate({ auditId, items: buildPayload(), notes: generalNotes });
                 }}
-                className="px-5 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors text-sm font-bold disabled:opacity-50 shadow-lg shadow-green-600/25"
+                className="px-3 sm:px-5 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors text-xs sm:text-sm font-black disabled:opacity-50 shadow-md shadow-green-600/25 active:scale-95 flex items-center gap-1"
               >
-                {finalizeMut.isPending ? "..." : "✅ اعتماد نهائي"}
+                <i className="ph-bold ph-check-circle text-sm sm:text-base"></i>
+                <span>{finalizeMut.isPending ? "..." : (lang === "en" ? "Finalize" : "اعتماد نهائي")}</span>
               </button>
             </div>
           </div>
