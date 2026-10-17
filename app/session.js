@@ -2,8 +2,8 @@
 // SESSION MANAGEMENT & SUPABASE HELPER (session.js)
 // =============================================================================
 
-const SUPABASE_URL = "https://hipgihzbfjdlnqxoikyv.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_ExaOEVspO3OET29ASK4gCw_JcUpb0X9";
+const SUPABASE_URL = "https://ominfwrmptjxjdxqqdts.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_r6GduVnOGpx1Dt4J0v6ncg_M2VYKcZf";
 
 // Initialize Supabase Client
 const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
