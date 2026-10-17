@@ -120,8 +120,11 @@ export default function Home() {
             const effectiveLoose = serverProd.loose != null ? serverProd.loose : local.loose;
             const effectiveOrder = serverProd.orderQty != null ? serverProd.orderQty : local.orderQty;
 
+            const effectiveIsHidden = serverProd.isHidden !== undefined ? !!serverProd.isHidden : !!local.isHidden;
+
             return {
               ...serverProd,
+              isHidden: effectiveIsHidden,
               qty: effectiveQty,
               packs: effectivePacks,
               loose: effectiveLoose,
@@ -273,10 +276,13 @@ export default function Home() {
   }, []);
 
   const isAdmin = session?.role === "admin";
+  const [showHiddenProducts, setShowHiddenProducts] = useState(false);
+  const hiddenProductsCount = useMemo(() => items.filter((p) => !!p.isHidden).length, [items]);
+
   const visibleItems = useMemo(() => {
-    if (isAdmin) return items;
+    if (isAdmin && showHiddenProducts) return items;
     return items.filter((p) => !p.isHidden);
-  }, [items, isAdmin]);
+  }, [items, isAdmin, showHiddenProducts]);
 
   const categories = useMemo(() => Array.from(new Set(visibleItems.map((p) => p.category))), [visibleItems]);
 
@@ -1107,9 +1113,28 @@ export default function Home() {
               <TabButton active={selectedCat === "ALL"} onClick={() => setSelectedCat("ALL")}>
                 {t("allCategories")}{" "}
                 <span className={`px-1.5 py-0.5 rounded-md ml-1 text-xs font-mono ${selectedCat === "ALL" ? "bg-white/20" : "bg-slate-100 text-slate-500 border border-slate-200"}`}>
-                  {items.length}
+                  {visibleItems.length}
                 </span>
               </TabButton>
+              {isAdmin && hiddenProductsCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowHiddenProducts((prev) => !prev)}
+                  className={`px-3 py-1.5 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 border shrink-0 ${
+                    showHiddenProducts
+                      ? "bg-purple-600 text-white border-purple-700 shadow-xs"
+                      : "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100"
+                  }`}
+                  title={showHiddenProducts ? "إخفاء الأصناف المستبعدة" : "عرض الأصناف المستبعدة"}
+                >
+                  <i className={`ph-bold ${showHiddenProducts ? "ph-eye" : "ph-eye-slash"}`}></i>
+                  <span>
+                    {showHiddenProducts
+                      ? (lang === "ar" ? "إخفاء الأصناف المستبعدة" : "Hide Excluded")
+                      : (lang === "ar" ? `الأصناف المخفية (${hiddenProductsCount})` : `Hidden (${hiddenProductsCount})`)}
+                  </span>
+                </button>
+              )}
               {categories.map((cat) => {
                 const meta = getMeta(cat);
                 const count = categoryCounts[cat] ?? 0;

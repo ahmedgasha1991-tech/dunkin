@@ -4,13 +4,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#2563eb" />
+  <meta name="theme-color" content="#FE6E27" />
+  <meta name="description" content="نظام إدارة وجرد مخزون دانكن | Dunkin' Inventory Management System" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>نظام مخزون دانكن | Dunkin' Inventory</title>
   <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="apple-touch-icon" href="/uploaded-images/1789136898270-ahmedon123456.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+  <style>
+    #app-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: #FE6E27;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.45s ease, visibility 0.45s ease;
+    }
+    #app-splash img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      animation: splash-in 0.6s ease-out both;
+    }
+    #app-splash.hide {
+      opacity: 0;
+      visibility: hidden;
+    }
+    @keyframes splash-in {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+  </style>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap"
@@ -22,6 +50,26 @@
 </head>
 
 <body>
+  <div id="app-splash" aria-hidden="true">
+    <img src="/logo.png" alt="Dunkin'" />
+  </div>
+  <script>
+    (function () {
+      var start = Date.now();
+      var MIN_MS = 1200;
+      function hideSplash() {
+        var el = document.getElementById("app-splash");
+        if (!el) return;
+        var wait = Math.max(0, MIN_MS - (Date.now() - start));
+        setTimeout(function () {
+          el.classList.add("hide");
+          setTimeout(function () { el.remove(); }, 500);
+        }, wait);
+      }
+      if (document.readyState === "complete") hideSplash();
+      else window.addEventListener("load", hideSplash);
+    })();
+  </script>
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>

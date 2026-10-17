@@ -264,9 +264,9 @@ export default function Audit() {
     let filtered: Product[] = [];
 
     if (auditType === "weekly") {
-      filtered = products.filter((p) => WEEKLY_CATEGORIES.has(p.category));
+      filtered = products.filter((p) => !p.isHidden && WEEKLY_CATEGORIES.has(p.category));
     } else if (auditType === "monthly") {
-      filtered = products;
+      filtered = products.filter((p) => !p.isHidden);
     } else {
       // جرد مخصص (مثل جرد يوم الأحد أو الأصناف المختارة)
       filtered = products.filter((p) => selectedProductCodes.has(p.code));

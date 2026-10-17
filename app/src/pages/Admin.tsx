@@ -9,6 +9,7 @@ import { AdminRequestsPanel } from "@/components/AdminRequestsPanel";
 import { ProductStockHistoryModal, formatStockDateDetails } from "@/components/ProductStockHistoryModal";
 import { getMeta } from "@/lib/catMeta";
 import { getProductImage, getCategoryFallbackImage } from "@/lib/productImages";
+import { getCachedProducts, saveCachedProducts } from "@/lib/offlineSync";
 
 type AdminMenuTab = "products" | "branches" | "employees" | "requests" | "submissions" | "transfers";
 
@@ -70,8 +71,15 @@ export default function Admin() {
   });
 
   const toggleVisibilityMut = trpc.inventory.toggleVisibility.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       utils.inventory.list.invalidate();
+      if (data?.id) {
+        const cached = getCachedProducts();
+        if (cached && cached.length > 0) {
+          const updated = cached.map((p) => (p.id === data.id ? { ...p, isHidden: data.isHidden } : p));
+          saveCachedProducts(updated);
+        }
+      }
     },
   });
 

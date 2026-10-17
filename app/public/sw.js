@@ -1,8 +1,10 @@
 // Dunkin Inventory Service Worker v3 (Rock Solid & Safe)
-const CACHE_NAME = "dunkin-inventory-v3";
-
+const CACHE_NAME = "dunkin-inventory-v4";
 const STATIC_ASSETS = [
   "/manifest.webmanifest",
+  "/logo.png",
+  "/icon-192.png",
+  "/icon-512.png",
   "https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap",
   "/uploaded-images/1788608968654-22.jpeg",
   "/uploaded-images/1789136851253-WhatsApp-Image-2026-03-29-at-7.47.41-PM.jpeg",

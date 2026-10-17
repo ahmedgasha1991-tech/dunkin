@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq, or, sql } from "drizzle-orm";
 import { inventorySnapshots, products, type Product, type StockLog } from "@db/schema";
 import { getDb } from "./connection";
 import { seedProducts } from "../../db/seedData";
@@ -51,11 +51,11 @@ function toNullableNumber(value: string | number | null | undefined) {
 const activeImagesMap = loadImagesMapping();
 
 function getProductsStoreFilePath() {
+  const p2 = path.resolve(process.cwd(), "app/src/data/products_store.json");
+  if (fs.existsSync(p2) || fs.existsSync(path.resolve(process.cwd(), "app"))) return p2;
   const p1 = path.resolve(process.cwd(), "src/data/products_store.json");
   if (fs.existsSync(p1)) return p1;
-  const p2 = path.resolve(process.cwd(), "app/src/data/products_store.json");
-  if (fs.existsSync(p2)) return p2;
-  return p1;
+  return p2;
 }
 
 function loadProductsStore(): Product[] {
@@ -66,6 +66,7 @@ function loadProductsStore(): Product[] {
       if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed.map((p: any) => ({
           ...p,
+          isHidden: !!p.isHidden,
           createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
           updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date(),
         }));
@@ -148,9 +149,15 @@ export async function listProducts(): Promise<Product[]> {
           const effectiveLoose = dbProd.loose !== null ? dbProd.loose : mem.loose;
           const effectiveOrder = dbProd.orderQty !== null ? dbProd.orderQty : mem.orderQty;
 
+          // Preserve admin visibility settings!
+          // memoryProducts / products_store is the source of truth for admin hides.
+          // Never let DB default 'false' overwrite mem.isHidden if mem.isHidden was set!
+          const effectiveIsHidden = mem.isHidden !== undefined ? !!mem.isHidden : !!dbProd.isHidden;
+
           merged.push({
             ...dbProd,
             id: mem.id, // keep consistent id
+            isHidden: effectiveIsHidden,
             qty: effectiveQty,
             packs: effectivePacks,
             loose: effectiveLoose,
@@ -172,6 +179,7 @@ export async function listProducts(): Promise<Product[]> {
         merged.push({
           ...dbProd,
           id: nextId,
+          isHidden: !!dbProd.isHidden,
           lastStockUpdate: null,
         });
       });
@@ -443,18 +451,25 @@ export async function editProduct(
   saveProductsStore(memoryProducts);
 
   try {
-    await getDb().update(products).set(normalizedFields).where(eq(products.id, id));
+    const db = getDb();
+    if (targetCode) {
+      await db.update(products).set(normalizedFields).where(or(eq(products.id, id), eq(products.code, targetCode)));
+    } else {
+      await db.update(products).set(normalizedFields).where(eq(products.id, id));
+    }
   } catch (err) {
     console.warn("DB edit fallback to memory & disk:", err);
   }
 }
 
 export async function toggleProductVisibility(id: number, isHidden: boolean) {
+  let targetCode: string | null = null;
   memoryProducts = memoryProducts.map((p) => {
     if (p.id === id) {
+      targetCode = p.code;
       return {
         ...p,
-        isHidden,
+        isHidden: !!isHidden,
         updatedAt: new Date(),
       };
     }
@@ -463,7 +478,12 @@ export async function toggleProductVisibility(id: number, isHidden: boolean) {
   saveProductsStore(memoryProducts);
 
   try {
-    await getDb().update(products).set({ isHidden }).where(eq(products.id, id));
+    const db = getDb();
+    if (targetCode) {
+      await db.update(products).set({ isHidden: !!isHidden }).where(or(eq(products.id, id), eq(products.code, targetCode)));
+    } else {
+      await db.update(products).set({ isHidden: !!isHidden }).where(eq(products.id, id));
+    }
   } catch (err) {
     console.warn("DB toggleProductVisibility fallback to memory & disk:", err);
   }
@@ -479,7 +499,12 @@ export async function deleteProduct(id: number) {
   saveProductsStore(memoryProducts);
 
   try {
-    await getDb().delete(products).where(eq(products.id, id));
+    const db = getDb();
+    if (current?.code) {
+      await db.delete(products).where(or(eq(products.id, id), eq(products.code, current.code)));
+    } else {
+      await db.delete(products).where(eq(products.id, id));
+    }
   } catch (err) {
     console.warn("DB delete fallback to memory & disk:", err);
   }
