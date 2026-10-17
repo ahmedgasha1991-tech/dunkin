@@ -1,0 +1,26 @@
+{
+  "name": "نظام إدارة وجرد المخزون الشامل",
+  "short_name": "مخزون دانكن",
+  "description": "تطبيق متكامل لإدارة وجرد المخزون والطلبيات حتى بدون إنترنت",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "/uploaded-images/1789136898270-ahmedon123456.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/uploaded-images/1789136898270-ahmedon123456.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

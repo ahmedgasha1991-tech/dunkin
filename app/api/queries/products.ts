@@ -1,13 +1,54 @@
+import fs from "fs";
+import path from "path";
 import { asc, eq, sql } from "drizzle-orm";
 import { inventorySnapshots, products, type Product, type StockLog } from "@db/schema";
 import { getDb } from "./connection";
 import { seedProducts } from "../../db/seedData";
+import staticImagesMap from "../../src/data/product_images_mapping.json";
+
+function getMappingFilePath() {
+  const p1 = path.resolve(process.cwd(), "src/data/product_images_mapping.json");
+  if (fs.existsSync(p1)) return p1;
+  const p2 = path.resolve(process.cwd(), "app/src/data/product_images_mapping.json");
+  if (fs.existsSync(p2)) return p2;
+  return p1;
+}
+
+function loadImagesMapping(): Record<string, string> {
+  try {
+    const jsonPath = getMappingFilePath();
+    if (fs.existsSync(jsonPath)) {
+      const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
+      return { ...staticImagesMap, ...parsed };
+    }
+  } catch (e) {
+    console.warn("Could not read dynamic product_images_mapping.json:", e);
+  }
+  return { ...staticImagesMap };
+}
+
+export function saveImageMapping(code: string, url: string | null) {
+  try {
+    const jsonPath = getMappingFilePath();
+    const current = loadImagesMapping();
+    if (url && url.trim()) {
+      current[code] = url.trim();
+    } else {
+      delete current[code];
+    }
+    fs.writeFileSync(jsonPath, JSON.stringify(current, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("Could not save to product_images_mapping.json:", e);
+  }
+}
 
 function toNullableNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === "") return null;
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
 }
+
+const activeImagesMap = loadImagesMapping();
 
 let memoryProducts: Product[] = seedProducts.map((p, index) => ({
   id: index + 1,
@@ -23,7 +64,7 @@ let memoryProducts: Product[] = seedProducts.map((p, index) => ({
   orderQty: null,
   unitCode: (p.unit_code === "CTN" || p.unit_code === "PKT" || p.unit_code === "PCS" ? p.unit_code : "PCS") as "CTN" | "PKT" | "PCS",
   unitLabel: p.unit_label,
-  imageUrl: null,
+  imageUrl: activeImagesMap[p.code] || null,
   sortOrder: index + 1,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -130,6 +171,10 @@ export async function updateProduct(
         if (stockLogs.length > 500) stockLogs.pop();
       }
     }
+  }
+
+  if (fields.imageUrl !== undefined && current) {
+    saveImageMapping(current.code, fields.imageUrl);
   }
 
   memoryProducts = memoryProducts.map((p) =>
@@ -266,6 +311,9 @@ export async function addProduct(input: {
   };
 
   memoryProducts.push(newProd);
+  if (normalizedImageUrl) {
+    saveImageMapping(input.code, normalizedImageUrl);
+  }
 
   try {
     const db = getDb();
@@ -279,11 +327,17 @@ export async function editProduct(
   id: number,
   fields: Partial<Pick<typeof products.$inferInsert, "code" | "nameAr" | "nameEn" | "category" | "mode" | "unitCode" | "unitLabel" | "imageUrl">>,
 ) {
+  const current = memoryProducts.find((p) => p.id === id);
   const normalizedImageUrl = fields.imageUrl === undefined ? undefined : normalizeOptionalImageUrl(fields.imageUrl);
   const normalizedFields = {
     ...fields,
     ...(normalizedImageUrl !== undefined ? { imageUrl: normalizedImageUrl } : {}),
   };
+
+  const targetCode = fields.code || current?.code;
+  if (normalizedImageUrl !== undefined && targetCode) {
+    saveImageMapping(targetCode, normalizedImageUrl);
+  }
 
   memoryProducts = memoryProducts.map((p) => {
     if (p.id === id) {
@@ -305,6 +359,10 @@ export async function editProduct(
 }
 
 export async function deleteProduct(id: number) {
+  const current = memoryProducts.find((p) => p.id === id);
+  if (current) {
+    saveImageMapping(current.code, null);
+  }
   memoryProducts = memoryProducts.filter((p) => p.id !== id);
   try {
     await getDb().delete(products).where(eq(products.id, id));

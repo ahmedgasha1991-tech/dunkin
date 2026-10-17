@@ -5,7 +5,10 @@ import './index.css'
 import { TRPCProvider } from "@/providers/trpc"
 import { LanguageProvider } from "@/providers/LanguageContext"
 import { AuthProvider } from "@/providers/AuthContext"
+import { registerServiceWorker } from "@/lib/offlineSync"
 import App from './App.tsx'
+
+registerServiceWorker();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

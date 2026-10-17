@@ -1637,7 +1637,6 @@ function BranchDetailsModal({
 }) {
   const { lang, getProductName, getUnitName, getBranchName, getEmployeeName, t } = useLanguage();
   const { setSelectedBranch } = useAuth();
-  const navigate = useNavigate();
   const utils = trpc.useUtils();
 
   const [tab, setTab] = useState<"employees" | "audits" | "orders">("employees");
@@ -2056,7 +2055,7 @@ function SubmissionDetailsModal({
     try {
       await generateAuditPdf({
         lang: lang as "ar" | "en",
-        auditType: submission.type === "weekly_audit" ? "weekly" : "monthly",
+        auditType: submission.details.audit_type === "weekly" ? "weekly" : "monthly",
         auditorName: submission.employee_name || "—",
         createdAt: submission.created_at,
         notes: null,
@@ -2082,7 +2081,13 @@ function SubmissionDetailsModal({
     const surplusCount = items.filter((r: any) => (r.actualQty ?? 0) > (r.systemQty ?? 0)).length;
     const exactCount = items.filter((r: any) => r.actualQty === r.systemQty && r.actualQty != null).length;
 
-    const typeStr = submission.type === "weekly_audit" ? (lang === "ar" ? "جرد أسبوعي" : "Weekly Audit") : (lang === "ar" ? "جرد شهري" : "Monthly Audit");
+    const auditKind = submission.details.audit_type;
+    const typeStr =
+      auditKind === "weekly"
+        ? (lang === "ar" ? "جرد أسبوعي" : "Weekly Audit")
+        : auditKind === "custom"
+          ? (lang === "ar" ? "جرد مخصص" : "Custom Audit")
+          : (lang === "ar" ? "جرد شهري" : "Monthly Audit");
     const dateStr = new Date(submission.created_at).toLocaleString(lang === "ar" ? "ar-EG" : "en-US");
 
     const summaryText = `📋 ${lang === "ar" ? "تقرير جرد دانكن" : "Dunkin Inventory Audit Report"}
@@ -2243,7 +2248,7 @@ function SubmissionDetailsModal({
               </button>
               <button
                 onClick={() => {
-                  setReceivingSubmission(submission);
+                  setReceivingSubmission?.(submission);
                 }}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 rounded-xl transition text-xs flex items-center gap-1.5 shadow-md"
                 title={lang === "en" ? "Receive and intake goods into live stock" : "استلام البضاعة وتوريد الكميات للمخزون"}
@@ -2311,7 +2316,7 @@ function InspectAuditModal({
   branch: BranchRecord;
   onClose: () => void;
 }) {
-  const { lang, t, getBranchName, getEmployeeName } = useLanguage();
+  const { lang, getBranchName, getEmployeeName } = useLanguage();
   const { setSelectedBranch } = useAuth();
   const navigate = useNavigate();
 
@@ -2347,7 +2352,7 @@ function InspectAuditModal({
         lang: lang as "ar" | "en",
         auditType: audit.auditType as "weekly" | "monthly",
         auditorName: audit.auditorName || "—",
-        createdAt: audit.createdAt,
+        createdAt: new Date(audit.createdAt).toISOString(),
         notes: audit.notes || null,
         items: items.map((r: any) => ({
           productCode: r.productCode,

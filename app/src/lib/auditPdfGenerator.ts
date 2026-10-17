@@ -19,7 +19,7 @@ export interface AuditItemRow {
 
 export interface AuditPdfOptions {
   lang?: "ar" | "en";
-  auditType: "weekly" | "monthly";
+  auditType: "weekly" | "monthly" | "custom";
   auditorName: string;
   createdAt: string;
   notes?: string | null;
@@ -60,8 +60,16 @@ export async function generateAuditPdf(options: AuditPdfOptions): Promise<void> 
   const isEn = lang === "en";
 
   const typeDisplay = isEn
-    ? auditType === "weekly" ? "Weekly Inventory Audit" : "Monthly Full Audit"
-    : auditType === "weekly" ? "الجرد الأسبوعي" : "الجرد الشهري";
+    ? auditType === "weekly"
+      ? "Weekly Inventory Audit"
+      : auditType === "custom"
+        ? "Custom Selected Audit"
+        : "Monthly Full Audit"
+    : auditType === "weekly"
+      ? "الجرد الأسبوعي"
+      : auditType === "custom"
+        ? "جرد مخصص (حسب التحديد)"
+        : "الجرد الشهري";
 
   const dateStr = isEn
     ? new Date(createdAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })

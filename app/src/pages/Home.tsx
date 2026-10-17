@@ -4,7 +4,7 @@ import { useNavigate } from "react-router";
 import { trpc } from "@/providers/trpc";
 import { getMeta, catMeta } from "@/lib/catMeta";
 import { uploadProductImage } from "@/lib/supabase";
-import { getProductImage, getCategoryFallbackImage } from "@/lib/productImages";
+import { getProductImage, getCategoryFallbackImage, getUploadedProductImage } from "@/lib/productImages";
 import type { Product } from "@db/schema";
 import { useLanguage } from "@/providers/LanguageContext";
 import { useAuth } from "@/providers/AuthContext";
@@ -12,6 +12,15 @@ import { AuthModal } from "@/components/AuthModal";
 import { ProductStockHistoryModal } from "@/components/ProductStockHistoryModal";
 import { GoodsReceivingModal } from "@/components/GoodsReceivingModal";
 import { BranchTransferModal } from "@/components/BranchTransferModal";
+import { OfflineBanner } from "@/components/OfflineBanner";
+import {
+  saveCachedProducts,
+  getCachedProducts,
+  queueMutation,
+  getQueuedMutations,
+  removeQueuedMutation,
+  subscribeOnlineStatus,
+} from "@/lib/offlineSync";
 
 type Fields = Partial<Pick<Product, "mode" | "qty" | "packs" | "packSize" | "loose" | "orderQty">>;
 
@@ -23,8 +32,15 @@ export default function Home() {
   const { lang, toggleLang, t, getProductName, getCategoryName, getUnitName, getBranchName, getEmployeeName } = useLanguage();
   const { session, logout, selectedBranch, setSelectedBranch, branchesList, sendAdminSubmission } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const listQuery = trpc.inventory.list.useQuery(undefined, { refetchOnWindowFocus: false });
-  const [items, setItems] = useState<Product[]>([]);
+  const listQuery = trpc.inventory.list.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+  const [items, setItems] = useState<Product[]>(() => {
+    const cached = getCachedProducts();
+    return cached.length > 0 ? cached : [];
+  });
+  const [isSyncing, setIsSyncing] = useState(false);
   const [search, setSearch] = useState("");
   const [unitFilter, setUnitFilter] = useState("ALL");
   const [selectedCat, setSelectedCat] = useState("ALL");
@@ -83,22 +99,79 @@ export default function Home() {
     if (u === "CTN") return lang === "en" ? "Carton 📦" : "كرتون 📦";
     if (u === "PKT") return lang === "en" ? "Packet 🗂️" : "باكت 🗂️";
     if (u === "PCS") return lang === "en" ? "Piece 낱" : "حبة 낱";
-    return getUnitName(fallbackUnitCode, fallbackUnitLabel);
+    return getUnitName(fallbackUnitCode ?? "PCS", fallbackUnitLabel);
   };
 
   useEffect(() => {
-    if (listQuery.data) setItems(listQuery.data);
+    if (listQuery.data && listQuery.data.length > 0) {
+      setItems(listQuery.data);
+      saveCachedProducts(listQuery.data);
+    }
   }, [listQuery.data]);
 
   const updateMut = trpc.inventory.update.useMutation({
     onSuccess: () => {
       utils.inventory.list.invalidate();
     },
-    onError: () => {
-      notify(lang === "en" ? "Failed to save, check connection" : "تعذر الحفظ، تحقق من الاتصال");
-      utils.inventory.list.invalidate();
+    onError: (_err, variables) => {
+      // Queue offline mutation if failed due to network or server disconnect
+      queueMutation({
+        productId: variables.id,
+        fields: {
+          mode: variables.mode,
+          qty: variables.qty,
+          packs: variables.packs,
+          packSize: variables.packSize,
+          loose: variables.loose,
+          orderQty: variables.orderQty,
+        },
+        updatedBy: variables.updatedBy || "موظف الفرع",
+        branchCode: variables.branchCode,
+      });
+      notify(lang === "en" ? "Saved offline (will sync when online) 📶" : "تم الحفظ محلياً (سيتم الرفع عند توفر الإنترنت) 📶");
     },
   });
+
+  const handleSyncNow = useCallback(async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      notify(lang === "en" ? "Cannot sync: No internet connection 📶" : "لا يمكن المزامنة: لا يوجد اتصال بالإنترنت 📶");
+      return;
+    }
+    const queue = getQueuedMutations();
+    if (queue.length === 0 || isSyncing) return;
+    setIsSyncing(true);
+    let synced = 0;
+    for (const q of queue) {
+      try {
+        await updateMut.mutateAsync({
+          id: q.productId,
+          updatedBy: q.updatedBy,
+          branchCode: q.branchCode,
+          ...q.fields,
+        });
+        removeQueuedMutation(q.id);
+        synced++;
+      } catch (err) {
+        console.warn("Failed to sync queued mutation:", q, err);
+        break;
+      }
+    }
+    setIsSyncing(false);
+    if (synced > 0) {
+      notify(lang === "en" ? `Synced ${synced} changes successfully! ☁️` : `تمت مزامنة ${synced} تعديلات بنجاح مع السيرفر! ☁️`);
+      utils.inventory.list.invalidate();
+    }
+  }, [isSyncing, updateMut, utils.inventory.list, lang]);
+
+  useEffect(() => {
+    const unsub = subscribeOnlineStatus((online) => {
+      if (online) {
+        handleSyncNow();
+      }
+    });
+    return unsub;
+  }, [handleSyncNow]);
+
   const resetMut = trpc.inventory.resetAll.useMutation({
     onSuccess: () => {
       notify(lang === "en" ? "All stock quantities reset to zero successfully! 🔄" : "تم تصفير جميع كميات المخزون بنجاح! 🔄");
@@ -122,7 +195,24 @@ export default function Home() {
   const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const patch = useCallback((id: number, fields: Fields, debounce = false) => {
     const empName = session?.full_name || (session?.employee_id ? `موظف #${session.employee_id}` : "موظف الفرع");
-    setItems((prev) => prev.map((p) => (p.id === id ? { ...p, ...fields } : p)));
+    setItems((prev) => {
+      const updated = prev.map((p) => (p.id === id ? { ...p, ...fields } : p));
+      saveCachedProducts(updated);
+      return updated;
+    });
+
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+    if (isOffline) {
+      queueMutation({
+        productId: id,
+        fields,
+        updatedBy: empName,
+        branchCode: selectedBranch,
+      });
+      notify(lang === "en" ? "Saved offline (will sync when online) 📶" : "تم الحفظ محلياً (سيتم الرفع عند توفر الإنترنت) 📶");
+      return;
+    }
+
     const run = () => updateMut.mutate({ id, updatedBy: empName, branchCode: selectedBranch, ...fields });
     const key = `${id}:${Object.keys(fields).join(",")}`;
     if (debounce) {
@@ -132,7 +222,7 @@ export default function Home() {
       clearTimeout(debounceTimers.current.get(key));
       run();
     }
-  }, [session?.full_name, session?.employee_id, selectedBranch, updateMut]);
+  }, [session?.full_name, session?.employee_id, selectedBranch, updateMut, lang]);
 
   const stepField = useCallback((p: Product, field: "qty" | "packs" | "loose", change: number) => {
     const next = Math.max(0, (p[field] ?? 0) + change);
@@ -358,7 +448,7 @@ export default function Home() {
     );
   }
 
-  if (listQuery.isError) {
+  if (listQuery.isError && items.length === 0) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 text-slate-500">
         <i className="ph ph-warning-circle text-5xl text-red-500"></i>
@@ -375,6 +465,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen pb-24" dir={lang === "ar" ? "rtl" : "ltr"}>
+      {/* Offline & Sync Status Banner */}
+      <OfflineBanner onSyncNow={handleSyncNow} isSyncing={isSyncing} />
+
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl font-bold text-sm modal-content-enter">
@@ -1788,7 +1881,9 @@ export function AddProductModal({
   const [code, setCode] = useState(product?.code ?? "");
   const [nameAr, setNameAr] = useState(product?.nameAr ?? "");
   const [nameEn, setNameEn] = useState(product?.nameEn ?? "");
-  const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? "");
+  const [imageUrl, setImageUrl] = useState(
+    product?.imageUrl || (product?.code ? getUploadedProductImage(product.code) : "") || ""
+  );
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 

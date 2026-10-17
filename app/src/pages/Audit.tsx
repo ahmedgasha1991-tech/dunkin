@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { trpc } from "@/providers/trpc";
 import type { Product } from "@db/schema";
 import { generateAuditPdf } from "@/lib/auditPdfGenerator";
 import { useLanguage } from "@/providers/LanguageContext";
 import { useAuth } from "@/providers/AuthContext";
+import { getCachedProducts } from "@/lib/offlineSync";
+import { OfflineBanner } from "@/components/OfflineBanner";
 
 // ─── الفئات التي تُفلتَر للجرد الأسبوعي (سريعة الاستهلاك) ──────────────────
 const WEEKLY_CATEGORIES = new Set([
@@ -231,8 +233,8 @@ export default function Audit() {
 
   // ─── بناء صفوف الجرد عند تغيير نوعه أو تحميل المنتجات أو تغيير الاختيار ─────
   useEffect(() => {
-    if (!productsQuery.data) return;
-    const products: Product[] = productsQuery.data;
+    const products: Product[] = (productsQuery.data && productsQuery.data.length > 0) ? productsQuery.data : getCachedProducts();
+    if (products.length === 0) return;
     let filtered: Product[] = [];
 
     if (auditType === "weekly") {
@@ -322,7 +324,6 @@ export default function Audit() {
   const buildPayload = () =>
     rows.map((r) => {
       const actual = getRowActualPieces(r);
-      const diff = getRowDiffPieces(r);
       let note = r.itemNotes || "";
       if (r.isDualMode && (r.packsCount !== "" || r.looseCount !== "")) {
         const p = r.packsCount || "0";
@@ -361,16 +362,8 @@ export default function Audit() {
 
   const filledCount = rows.filter((r) => getRowActualPieces(r) !== null).length;
   const deficitCount = rows.filter((r) => {
-    const d = getRowDiffPieces(r);
-    return d !== null && d < 0;
-  }).length;
-  const surplusCount = rows.filter((r) => {
-    const d = getRowDiffPieces(r);
-    return d !== null && d > 0;
-  }).length;
-  const matchCount = rows.filter((r) => {
-    const d = getRowDiffPieces(r);
-    return d === 0;
+    const diff = getRowDiffPieces(r);
+    return getRowActualPieces(r) !== null && diff !== null && diff < 0;
   }).length;
 
   // ─── إرسال للأدمن وتصدير PDF ─────────────────────────────────────────────
@@ -456,7 +449,6 @@ export default function Audit() {
       return;
     }
 
-    const deficitCount = rows.filter((r) => getRowActualPieces(r) !== null && getRowDiffPieces(r) !== null && (getRowDiffPieces(r) as number) < 0).length;
     const surplusCount = rows.filter((r) => getRowActualPieces(r) !== null && getRowDiffPieces(r) !== null && (getRowDiffPieces(r) as number) > 0).length;
     const exactCount = rows.filter((r) => getRowActualPieces(r) !== null && getRowDiffPieces(r) === 0).length;
 
@@ -577,6 +569,9 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
 
   return (
     <div className="min-h-screen bg-slate-50" dir={lang === "ar" ? "rtl" : "ltr"}>
+      {/* Offline Status Banner */}
+      <OfflineBanner />
+
       {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl font-bold text-sm animate-in fade-in slide-in-from-bottom-4">
@@ -1056,7 +1051,6 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
               const diff = getRowDiffPieces(row);
               const isDeficit = diff !== null && diff < 0;
               const isSurplus = diff !== null && diff > 0;
-              const isMatch = diff === 0;
 
               return (
                 <div
@@ -1301,7 +1295,6 @@ ${a.notes ? `📝 ${lang === "ar" ? "ملاحظات" : "Notes"}: ${a.notes}` : "
                   const diff = getRowDiffPieces(row);
                   const isDeficit = diff !== null && diff < 0;
                   const isSurplus = diff !== null && diff > 0;
-                  const isMatch = diff === 0;
 
                   return (
                     <tr

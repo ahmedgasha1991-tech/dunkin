@@ -1,4 +1,7 @@
 // Curated, fast-loading, high-resolution product images for Dunkin' catalog
+import { PRODUCT_UPLOADED_IMAGES, getUploadedProductImage } from "../data/productImagesMapping";
+
+export { PRODUCT_UPLOADED_IMAGES, getUploadedProductImage };
 
 export const DEFAULT_DUNKIN_IMAGE =
   "https://images.unsplash.com/photo-1551024709-8f23befc6f87?auto=format&fit=crop&w=400&q=80";
@@ -191,6 +194,7 @@ const KEYWORD_MATCHERS: KeywordMatch[] = [
  * 4. Falls back to default Dunkin' photo.
  */
 export function getProductImage(product?: {
+  code?: string;
   imageUrl?: string | null;
   category?: string;
   nameAr?: string;
@@ -198,9 +202,14 @@ export function getProductImage(product?: {
 }): string {
   if (!product) return DEFAULT_DUNKIN_IMAGE;
 
-  // Custom uploaded image
+  // Custom uploaded image on product object
   if (product.imageUrl && product.imageUrl.trim() !== "") {
     return product.imageUrl;
+  }
+
+  // Uploaded user image mapped by product code
+  if (product.code && PRODUCT_UPLOADED_IMAGES[product.code]) {
+    return PRODUCT_UPLOADED_IMAGES[product.code];
   }
 
   // Keyword match

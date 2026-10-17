@@ -78,19 +78,19 @@ app.use("/api/trpc/*", async (c) => {
   });
 });
 
-app.get("*", (c) => {
-  if (c.req.path.startsWith("/api")) {
-    return c.json({ error: "Not Found" }, 404);
-  }
+if (env.isProduction) {
+  app.get("*", (c) => {
+    if (c.req.path.startsWith("/api")) {
+      return c.json({ error: "Not Found" }, 404);
+    }
 
-  const accept = c.req.header("accept") ?? "";
-  if (!accept.includes("text/html")) {
-    return c.json({ error: "Not Found" }, 404);
-  }
-
-  const html = fs.readFileSync(indexFile, "utf-8");
-  return c.html(html);
-});
+    if (fs.existsSync(indexFile)) {
+      const html = fs.readFileSync(indexFile, "utf-8");
+      return c.html(html);
+    }
+    return c.text("Not Found", 404);
+  });
+}
 
 app.all("/api/*", (c) => c.json({ error: "Not Found" }, 404));
 

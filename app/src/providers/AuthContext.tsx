@@ -63,7 +63,7 @@ export interface AdminSubmission {
       notes?: string;
     }>;
     notes?: string;
-    audit_type?: "weekly" | "monthly";
+    audit_type?: "weekly" | "monthly" | "custom";
     auditor_name?: string;
   };
 }

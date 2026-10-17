@@ -1,12 +1,16 @@
 import path from "path";
 const __dirname = import.meta.dirname;
 import { defineConfig } from "vite";
-import devServer from "@hono/vite-dev-server";
+import react from "@vitejs/plugin-react";
+import devServer, { defaultOptions } from "@hono/vite-dev-server";
 
 export default defineConfig({
   plugins: [
+    react(),
     devServer({
       entry: "./api/boot.ts",
+      // Only let Hono handle /api/* requests; all frontend routes and assets are handled by Vite
+      exclude: [/^(?!\/api(\/|$)).*/],
     }),
   ],
   server: {
