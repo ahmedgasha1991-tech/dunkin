@@ -9,7 +9,6 @@ import { createContext } from "./context";
 import { env } from "./lib/env";
 
 const app = new Hono<{ Bindings: HttpBindings }>();
-const indexFile = path.resolve(import.meta.dirname, "../index.html");
 
 // --- In-memory Rate Limiter Map ---
 interface RateLimitRecord {
@@ -77,32 +76,38 @@ app.use("/api/trpc/*", async (c) => {
     createContext,
   });
 });
+app.all("/api/*", (c) => c.json({ error: "Not Found" }, 404));
 
 if (env.isProduction) {
+  const { serve } = await import("@hono/node-server");
+  const { serveStatic } = await import("@hono/node-server/serve-static");
+
+  // Determine production public assets directory
+  const publicDir = fs.existsSync(path.resolve(process.cwd(), "dist/public"))
+    ? path.resolve(process.cwd(), "dist/public")
+    : path.resolve(import.meta.dirname, "public");
+
+  const prodIndexHtmlPath = path.resolve(publicDir, "index.html");
+
+  // 1. Serve static files (assets, uploaded-images, sw.js, manifest, etc.)
+  app.use("*", serveStatic({ root: path.relative(process.cwd(), publicDir) || "./dist/public" }));
+
+  // 2. SPA Fallback: Any other non-API GET request serves the compiled dist/public/index.html
   app.get("*", (c) => {
     if (c.req.path.startsWith("/api")) {
       return c.json({ error: "Not Found" }, 404);
     }
 
-    if (fs.existsSync(indexFile)) {
-      const html = fs.readFileSync(indexFile, "utf-8");
-      return c.html(html);
+    if (fs.existsSync(prodIndexHtmlPath)) {
+      return c.html(fs.readFileSync(prodIndexHtmlPath, "utf-8"));
     }
-    return c.text("Not Found", 404);
+    return c.text("Production index.html not found", 404);
   });
-}
-
-app.all("/api/*", (c) => c.json({ error: "Not Found" }, 404));
-
-export default app;
-
-if (env.isProduction) {
-  const { serve } = await import("@hono/node-server");
-  const { serveStaticFiles } = await import("./lib/vite");
-  serveStaticFiles(app);
 
   const port = parseInt(process.env.PORT || "3000");
   serve({ fetch: app.fetch, port }, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
 }
+
+export default app;
