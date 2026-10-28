@@ -50,6 +50,114 @@ function toNullableNumber(value: string | number | null | undefined) {
 
 const activeImagesMap = loadImagesMapping();
 
+export async function withDbTimeout<T>(promise: Promise<T>, timeoutMs = 3000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB Timeout")), timeoutMs)),
+  ]);
+}
+
+function getHiddenProductsPaths(): string[] {
+  return [
+    path.resolve(process.cwd(), "src/data/hidden_products.json"),
+    path.resolve(process.cwd(), "app/src/data/hidden_products.json"),
+  ];
+}
+
+export function loadHiddenProductCodes(): Set<string> {
+  const set = new Set<string>();
+  const paths = getHiddenProductsPaths();
+  for (const p of paths) {
+    try {
+      if (fs.existsSync(p)) {
+        const raw = fs.readFileSync(p, "utf-8");
+        const list = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          for (const code of list) {
+            if (code) set.add(String(code).trim());
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+  return set;
+}
+
+export function saveHiddenProductCodes(codes: Set<string> | string[]) {
+  const list = Array.from(codes);
+  const paths = getHiddenProductsPaths();
+  for (const p of paths) {
+    try {
+      const dir = path.dirname(p);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(p, JSON.stringify(list, null, 2), "utf-8");
+    } catch (e) {
+      // ignore
+    }
+  }
+}
+
+function getProductPackSizesPaths() {
+  return [
+    path.resolve(process.cwd(), "src/data/product_pack_sizes.json"),
+    path.resolve(process.cwd(), "app/src/data/product_pack_sizes.json"),
+    path.resolve(__dirname, "../../src/data/product_pack_sizes.json"),
+    path.resolve(__dirname, "../src/data/product_pack_sizes.json"),
+  ];
+}
+
+export function loadProductPackSizes(): Record<string, number> {
+  const map: Record<string, number> = {};
+  const paths = getProductPackSizesPaths();
+  for (const p of paths) {
+    try {
+      if (fs.existsSync(p)) {
+        const raw = fs.readFileSync(p, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          for (const [k, v] of Object.entries(parsed)) {
+            const num = Number(v);
+            if (!isNaN(num) && num > 0) {
+              map[String(k)] = num;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+  return map;
+}
+
+export function saveProductPackSizes(sizes: Record<string, number>) {
+  const paths = getProductPackSizesPaths();
+  for (const p of paths) {
+    try {
+      const dir = path.dirname(p);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(p, JSON.stringify(sizes, null, 2), "utf-8");
+    } catch (e) {
+      // ignore
+    }
+  }
+}
+
+export function extractPackSizeFromName(nameAr: string, nameEn: string): number | null {
+  const text = (nameAr || "") + " " + (nameEn || "");
+  const m = text.match(/(?:1\s*[×xX*]\s*|x\s*)(\d+)\s*(?:حبة|قطعة|باكت|علبة|كيس|ظرف|PCS|PKT|BAG|CAN|BTL|CTN)?/i);
+  if (m && Number(m[1]) > 1) return Number(m[1]);
+  const m2 = text.match(/(\d+)\s*(?:PCS|PKT|حبة|باكت)\b/i);
+  if (m2 && Number(m2[1]) > 1) return Number(m2[1]);
+  return null;
+}
+
 function getProductsStoreFilePath() {
   const p2 = path.resolve(process.cwd(), "app/src/data/products_store.json");
   if (fs.existsSync(p2) || fs.existsSync(path.resolve(process.cwd(), "app"))) return p2;
@@ -59,17 +167,23 @@ function getProductsStoreFilePath() {
 }
 
 function loadProductsStore(): Product[] {
+  const hiddenCodes = loadHiddenProductCodes();
+  const packSizes = loadProductPackSizes();
   try {
     const jsonPath = getProductsStoreFilePath();
     if (fs.existsSync(jsonPath)) {
       const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf-8"));
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((p: any) => ({
-          ...p,
-          isHidden: !!p.isHidden,
-          createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
-          updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date(),
-        }));
+        return parsed.map((p: any) => {
+          let size = p.packSize != null && p.packSize > 0 ? p.packSize : (packSizes[p.code] ?? extractPackSizeFromName(p.nameAr, p.nameEn) ?? null);
+          return {
+            ...p,
+            packSize: size,
+            isHidden: hiddenCodes.has(p.code) || !!p.isHidden,
+            createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+            updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date(),
+          };
+        });
       }
     }
   } catch (e) {
@@ -77,38 +191,48 @@ function loadProductsStore(): Product[] {
   }
 
   // Fallback to initial seed products
-  return seedProducts.map((p, index) => ({
-    id: index + 1,
-    code: p.code,
-    nameAr: p.name_ar,
-    nameEn: p.name_en,
-    category: p.category,
-    mode: p.mode === "detailed" ? "detailed" : "simple",
-    qty: toNullableNumber(p.qty),
-    packs: toNullableNumber(p.packs),
-    packSize: toNullableNumber(p.pack_size),
-    loose: toNullableNumber(p.loose),
-    orderQty: null,
-    unitCode: (p.unit_code === "CTN" || p.unit_code === "PKT" || p.unit_code === "PCS" ? p.unit_code : "PCS") as "CTN" | "PKT" | "PCS",
-    unitLabel: p.unit_label,
-    imageUrl: activeImagesMap[p.code] || null,
-    sortOrder: index + 1,
-    isHidden: false,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  }));
+  return seedProducts.map((p, index) => {
+    let size = toNullableNumber(p.pack_size);
+    if (!size || size <= 0) {
+      size = packSizes[p.code] ?? extractPackSizeFromName(p.name_ar, p.name_en) ?? null;
+    }
+    return {
+      id: index + 1,
+      code: p.code,
+      nameAr: p.name_ar,
+      nameEn: p.name_en,
+      category: p.category,
+      mode: p.mode === "detailed" ? "detailed" : "simple",
+      qty: toNullableNumber(p.qty),
+      packs: toNullableNumber(p.packs),
+      packSize: size,
+      loose: toNullableNumber(p.loose),
+      orderQty: null,
+      unitCode: (p.unit_code === "CTN" || p.unit_code === "PKT" || p.unit_code === "PCS" ? p.unit_code : "PCS") as "CTN" | "PKT" | "PCS",
+      unitLabel: p.unit_label,
+      imageUrl: activeImagesMap[p.code] || null,
+      sortOrder: index + 1,
+      isHidden: hiddenCodes.has(p.code),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  });
 }
 
 export function saveProductsStore(items: Product[]) {
-  try {
-    const jsonPath = getProductsStoreFilePath();
-    const dir = path.dirname(jsonPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+  const paths = [
+    path.resolve(process.cwd(), "src/data/products_store.json"),
+    path.resolve(process.cwd(), "app/src/data/products_store.json"),
+  ];
+  for (const jsonPath of paths) {
+    try {
+      const dir = path.dirname(jsonPath);
+      if (fs.existsSync(dir)) {
+        fs.writeFileSync(jsonPath, JSON.stringify(items, null, 2), "utf-8");
+      }
+    } catch (e) {
+      console.warn("Could not save to products_store.json:", e);
     }
-    fs.writeFileSync(jsonPath, JSON.stringify(items, null, 2), "utf-8");
-  } catch (e) {
-    console.warn("Could not save to products_store.json:", e);
   }
 }
 
@@ -127,11 +251,13 @@ export function normalizeOptionalImageUrl(value: string | null | undefined) {
 }
 
 export async function listProducts(): Promise<Product[]> {
+  const hiddenCodes = loadHiddenProductCodes();
+  const packSizes = loadProductPackSizes();
   try {
-    const res = await Promise.race([
+    const res = await withDbTimeout(
       getDb().select().from(products).orderBy(asc(products.sortOrder), asc(products.id)),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB Timeout")), 5000))
-    ]);
+      3000
+    );
 
     if (res && res.length > 0) {
       // Smart merge: Do NOT overwrite valid non-null quantities or added products with null!
@@ -149,14 +275,21 @@ export async function listProducts(): Promise<Product[]> {
           const effectiveLoose = dbProd.loose !== null ? dbProd.loose : mem.loose;
           const effectiveOrder = dbProd.orderQty !== null ? dbProd.orderQty : mem.orderQty;
 
-          // Preserve admin visibility settings!
-          // memoryProducts / products_store is the source of truth for admin hides.
-          // Never let DB default 'false' overwrite mem.isHidden if mem.isHidden was set!
-          const effectiveIsHidden = mem.isHidden !== undefined ? !!mem.isHidden : !!dbProd.isHidden;
+          // Preserve admin visibility settings
+          const effectiveIsHidden = hiddenCodes.has(mem.code) || (mem.isHidden === true ? true : !!dbProd.isHidden);
+
+          // Preserve packSize: prioritize DB if set > 0, otherwise mem, otherwise packSizes file or extracted
+          const effectivePackSize =
+            dbProd.packSize !== null && dbProd.packSize > 0
+              ? dbProd.packSize
+              : mem.packSize !== null && mem.packSize > 0
+              ? mem.packSize
+              : packSizes[mem.code] ?? extractPackSizeFromName(mem.nameAr, mem.nameEn) ?? null;
 
           merged.push({
             ...dbProd,
             id: mem.id, // keep consistent id
+            packSize: effectivePackSize,
             isHidden: effectiveIsHidden,
             qty: effectiveQty,
             packs: effectivePacks,
@@ -166,8 +299,15 @@ export async function listProducts(): Promise<Product[]> {
           });
         } else {
           // Newly added product in memory that might not be in DB yet -> KEEP IT!
+          const effectivePackSize =
+            mem.packSize !== null && mem.packSize > 0
+              ? mem.packSize
+              : packSizes[mem.code] ?? extractPackSizeFromName(mem.nameAr, mem.nameEn) ?? null;
+
           merged.push({
             ...mem,
+            packSize: effectivePackSize,
+            isHidden: hiddenCodes.has(mem.code) || !!mem.isHidden,
             lastStockUpdate: lastStockUpdates[mem.id] || null,
           });
         }
@@ -176,10 +316,16 @@ export async function listProducts(): Promise<Product[]> {
       // 2. Any additional products in DB not in memory
       dbMap.forEach((dbProd) => {
         const nextId = merged.length > 0 ? Math.max(...merged.map((x) => x.id)) + 1 : 1;
+        const effectivePackSize =
+          dbProd.packSize !== null && dbProd.packSize > 0
+            ? dbProd.packSize
+            : packSizes[dbProd.code] ?? extractPackSizeFromName(dbProd.nameAr, dbProd.nameEn) ?? null;
+
         merged.push({
           ...dbProd,
           id: nextId,
-          isHidden: !!dbProd.isHidden,
+          packSize: effectivePackSize,
+          isHidden: hiddenCodes.has(dbProd.code) || !!dbProd.isHidden,
           lastStockUpdate: null,
         });
       });
@@ -194,6 +340,11 @@ export async function listProducts(): Promise<Product[]> {
 
   return memoryProducts.map((p) => ({
     ...p,
+    packSize:
+      p.packSize !== null && p.packSize > 0
+        ? p.packSize
+        : packSizes[p.code] ?? extractPackSizeFromName(p.nameAr, p.nameEn) ?? null,
+    isHidden: hiddenCodes.has(p.code) || !!p.isHidden,
     lastStockUpdate: lastStockUpdates[p.id] || null,
   }));
 }
@@ -292,6 +443,8 @@ export async function receiveOrderItems(
     productCode: string;
     orderedQty: number;
     receivedQty: number;
+    unit?: string;
+    unitCode?: string;
     status: "received_full" | "received_partial" | "not_received";
     notes?: string | null;
   }>,
@@ -304,24 +457,55 @@ export async function receiveOrderItems(
   const updatedItems: Array<{ id: number; prevQty: number; newQty: number; addedQty: number }> = [];
 
   for (const item of items) {
+    // Match by productCode first to prevent fake index collisions
     const current = memoryProducts.find(
-      (p) => (item.productId && p.id === item.productId) || p.code === item.productCode
+      (p) => (item.productCode && p.code === item.productCode) || (item.productId && p.id === item.productId)
     );
 
     if (current) {
       const prevQty = current.qty ?? 0;
       const addedQty = Math.max(0, item.receivedQty);
-      const newQty = prevQty + addedQty;
+      const isDetailed = current.mode === "detailed";
+      const packSize = (current.packSize !== null && current.packSize > 0) ? current.packSize : 1;
+      const uCode = item.unitCode || current.unitCode;
+      const uStr = (item.unit || "").toLowerCase();
+      const isPacketOrCarton =
+        uCode === "PKT" ||
+        uCode === "CTN" ||
+        uStr.includes("باكت") ||
+        uStr.includes("باكيت") ||
+        uStr.includes("كرتون") ||
+        uStr.includes("pkt") ||
+        uStr.includes("ctn");
+
+      let newQty = prevQty;
+      let newPacks = current.packs ?? 0;
+      let newLoose = current.loose ?? 0;
 
       // Only alter stock qty if items were actually received
       if (addedQty > 0) {
+        if (isDetailed) {
+          if (isPacketOrCarton) {
+            newPacks = (current.packs ?? 0) + addedQty;
+            newLoose = current.loose ?? 0;
+            newQty = (newPacks * packSize) + newLoose;
+          } else {
+            // Received as individual pieces
+            newLoose = (current.loose ?? 0) + addedQty;
+            newPacks = current.packs ?? 0;
+            newQty = (newPacks * packSize) + newLoose;
+          }
+        } else {
+          newQty = prevQty + addedQty;
+        }
+
         const log: StockLog = {
           id: `log-recv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           productId: current.id,
           productCode: current.code,
           productNameAr: current.nameAr,
           productNameEn: current.nameEn,
-          field: "qty",
+          field: isDetailed ? (isPacketOrCarton ? "packs" : "loose") : "qty",
           prevQty,
           newQty,
           delta: addedQty,
@@ -336,7 +520,11 @@ export async function receiveOrderItems(
         if (stockLogs.length > 500) stockLogs.pop();
 
         current.qty = newQty;
-        current.orderQty = null; // Fulfill order requirement
+        if (isDetailed) {
+          current.packs = newPacks;
+          current.loose = newLoose;
+        }
+        current.orderQty = null; // Fulfill & clear order requirement
         current.updatedAt = new Date();
         current.lastStockUpdate = log;
 
@@ -345,20 +533,68 @@ export async function receiveOrderItems(
         try {
           await getDb()
             .update(products)
-            .set({ qty: newQty, orderQty: null, updatedAt: new Date() })
+            .set({
+              qty: newQty,
+              packs: isDetailed ? newPacks : current.packs,
+              loose: isDetailed ? newLoose : current.loose,
+              orderQty: null,
+              updatedAt: new Date(),
+            })
             .where(eq(products.id, current.id));
         } catch (err) {
           console.warn("DB update fallback during goods receipt:", err);
         }
-      } else if (item.status === "not_received") {
-        // Did not arrive: keep current stock, but log notes or optionally keep order
+      } else {
+        // Even if 0 received, clear orderQty so it doesn't linger in cart
+        current.orderQty = null;
         current.updatedAt = new Date();
+        try {
+          await getDb()
+            .update(products)
+            .set({ orderQty: null, updatedAt: new Date() })
+            .where(eq(products.id, current.id));
+        } catch (err) {}
       }
     }
   }
 
   saveProductsStore(memoryProducts);
-  return { ok: true, count: updatedItems.length, updatedItems };
+  return { ok: true, count: updatedItems.length, updatedItems, products: memoryProducts };
+}
+
+export async function clearOrderQuantities(items?: Array<{ id?: number; code?: string }>) {
+  let clearedCount = 0;
+  if (!items || items.length === 0) {
+    for (const p of memoryProducts) {
+      if (p.orderQty != null) {
+        p.orderQty = null;
+        p.updatedAt = new Date();
+        clearedCount++;
+      }
+    }
+    saveProductsStore(memoryProducts);
+    try {
+      await getDb().update(products).set({ orderQty: null, updatedAt: new Date() });
+    } catch (err) {
+      console.warn("DB fallback for clearOrderQuantities:", err);
+    }
+  } else {
+    for (const item of items) {
+      const p = memoryProducts.find(
+        (x) => (item.code && x.code === item.code) || (item.id && x.id === item.id)
+      );
+      if (p) {
+        p.orderQty = null;
+        p.updatedAt = new Date();
+        clearedCount++;
+        try {
+          await getDb().update(products).set({ orderQty: null, updatedAt: new Date() }).where(eq(products.id, p.id));
+        } catch (err) {}
+      }
+    }
+    saveProductsStore(memoryProducts);
+  }
+  return { ok: true, clearedCount, products: memoryProducts };
 }
 
 export function getStockLogs(productId?: number): StockLog[] {
@@ -378,12 +614,14 @@ export async function addProduct(input: {
   unitLabel: string;
   imageUrl?: string | null;
   qty?: number | null;
+  packSize?: number | null;
   isHidden?: boolean;
 }) {
   const normalizedImageUrl = normalizeOptionalImageUrl(input.imageUrl);
   const newId = memoryProducts.length > 0 ? Math.max(...memoryProducts.map((p) => p.id)) + 1 : 1;
   const nextSort = memoryProducts.length > 0 ? Math.max(...memoryProducts.map((p) => p.sortOrder)) + 1 : 1;
   const isHidden = input.isHidden ?? false;
+  const packSize = input.packSize ?? null;
 
   const newProd: Product = {
     id: newId,
@@ -394,7 +632,7 @@ export async function addProduct(input: {
     mode: input.mode,
     qty: input.qty ?? null,
     packs: null,
-    packSize: null,
+    packSize,
     loose: null,
     orderQty: null,
     unitCode: input.unitCode,
@@ -413,9 +651,18 @@ export async function addProduct(input: {
     saveImageMapping(input.code, normalizedImageUrl);
   }
 
+  if (packSize && packSize > 0) {
+    const sizes = loadProductPackSizes();
+    sizes[input.code] = packSize;
+    saveProductPackSizes(sizes);
+  }
+
   try {
     const db = getDb();
-    await db.insert(products).values({ ...input, isHidden, imageUrl: normalizedImageUrl, sortOrder: nextSort, qty: input.qty ?? null });
+    await withDbTimeout(
+      db.insert(products).values({ ...input, isHidden, packSize, imageUrl: normalizedImageUrl, sortOrder: nextSort, qty: input.qty ?? null }),
+      3000
+    );
   } catch (err) {
     console.warn("DB insert fallback to memory & disk:", err);
   }
@@ -423,7 +670,7 @@ export async function addProduct(input: {
 
 export async function editProduct(
   id: number,
-  fields: Partial<Pick<typeof products.$inferInsert, "code" | "nameAr" | "nameEn" | "category" | "mode" | "unitCode" | "unitLabel" | "imageUrl" | "isHidden" | "qty">>,
+  fields: Partial<Pick<typeof products.$inferInsert, "code" | "nameAr" | "nameEn" | "category" | "mode" | "unitCode" | "unitLabel" | "imageUrl" | "isHidden" | "qty" | "packSize">>,
 ) {
   const current = memoryProducts.find((p) => p.id === id);
   const normalizedImageUrl = fields.imageUrl === undefined ? undefined : normalizeOptionalImageUrl(fields.imageUrl);
@@ -437,8 +684,28 @@ export async function editProduct(
     saveImageMapping(targetCode, normalizedImageUrl);
   }
 
+  if (fields.isHidden !== undefined && targetCode) {
+    const hiddenCodes = loadHiddenProductCodes();
+    if (fields.isHidden) {
+      hiddenCodes.add(targetCode);
+    } else {
+      hiddenCodes.delete(targetCode);
+    }
+    saveHiddenProductCodes(hiddenCodes);
+  }
+
+  if (fields.packSize !== undefined && targetCode) {
+    const sizes = loadProductPackSizes();
+    if (fields.packSize && fields.packSize > 0) {
+      sizes[targetCode] = fields.packSize;
+    } else {
+      delete sizes[targetCode];
+    }
+    saveProductPackSizes(sizes);
+  }
+
   memoryProducts = memoryProducts.map((p) => {
-    if (p.id === id) {
+    if (p.id === id || (targetCode && p.code === targetCode)) {
       return {
         ...p,
         ...fields,
@@ -452,20 +719,80 @@ export async function editProduct(
 
   try {
     const db = getDb();
-    if (targetCode) {
-      await db.update(products).set(normalizedFields).where(or(eq(products.id, id), eq(products.code, targetCode)));
-    } else {
-      await db.update(products).set(normalizedFields).where(eq(products.id, id));
-    }
+    await withDbTimeout(
+      (async () => {
+        try {
+          await db.execute(sql`
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT false;
+            ALTER TABLE products ADD COLUMN IF NOT EXISTS pack_size INTEGER;
+          `);
+        } catch (_) {}
+        if (targetCode) {
+          await db.update(products).set(normalizedFields).where(or(eq(products.id, id), eq(products.code, targetCode)));
+        } else {
+          await db.update(products).set(normalizedFields).where(eq(products.id, id));
+        }
+      })(),
+      3000
+    );
   } catch (err) {
     console.warn("DB edit fallback to memory & disk:", err);
   }
 }
 
-export async function toggleProductVisibility(id: number, isHidden: boolean) {
-  let targetCode: string | null = null;
+export async function setProductPackSize(id: number, packSize: number | null, code?: string) {
+  let targetCode: string | null = code || null;
+  const current = memoryProducts.find((p) => p.id === id || (code && p.code === code));
+  targetCode = code || current?.code || null;
+
   memoryProducts = memoryProducts.map((p) => {
-    if (p.id === id) {
+    if (p.id === id || (targetCode && p.code === targetCode)) {
+      return {
+        ...p,
+        packSize,
+        updatedAt: new Date(),
+      };
+    }
+    return p;
+  });
+
+  if (targetCode) {
+    const sizes = loadProductPackSizes();
+    if (packSize && packSize > 0) {
+      sizes[targetCode] = packSize;
+    } else {
+      delete sizes[targetCode];
+    }
+    saveProductPackSizes(sizes);
+  }
+  saveProductsStore(memoryProducts);
+
+  try {
+    const db = getDb();
+    await withDbTimeout(
+      (async () => {
+        try {
+          await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS pack_size INTEGER;`);
+        } catch (_) {}
+        if (targetCode) {
+          await db.update(products).set({ packSize, updatedAt: new Date() }).where(or(eq(products.id, id), eq(products.code, targetCode)));
+        } else {
+          await db.update(products).set({ packSize, updatedAt: new Date() }).where(eq(products.id, id));
+        }
+      })(),
+      3000
+    );
+  } catch (err) {
+    console.warn("DB setProductPackSize fallback to memory & disk:", err);
+  }
+
+  return { ok: true, id, code: targetCode, packSize };
+}
+
+export async function toggleProductVisibility(id: number, isHidden: boolean, code?: string) {
+  let targetCode: string | null = code || null;
+  memoryProducts = memoryProducts.map((p) => {
+    if (p.id === id || (code && p.code === code)) {
       targetCode = p.code;
       return {
         ...p,
@@ -475,19 +802,43 @@ export async function toggleProductVisibility(id: number, isHidden: boolean) {
     }
     return p;
   });
+
+  if (!targetCode) {
+    const found = memoryProducts.find((p) => p.id === id || (code && p.code === code));
+    if (found) targetCode = found.code;
+  }
+
+  if (targetCode) {
+    const hiddenCodes = loadHiddenProductCodes();
+    if (isHidden) {
+      hiddenCodes.add(targetCode);
+    } else {
+      hiddenCodes.delete(targetCode);
+    }
+    saveHiddenProductCodes(hiddenCodes);
+  }
+
   saveProductsStore(memoryProducts);
 
   try {
     const db = getDb();
-    if (targetCode) {
-      await db.update(products).set({ isHidden: !!isHidden }).where(or(eq(products.id, id), eq(products.code, targetCode)));
-    } else {
-      await db.update(products).set({ isHidden: !!isHidden }).where(eq(products.id, id));
-    }
+    await withDbTimeout(
+      (async () => {
+        try {
+          await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT false;`);
+        } catch (_) {}
+        if (targetCode) {
+          await db.update(products).set({ isHidden: !!isHidden }).where(or(eq(products.id, id), eq(products.code, targetCode)));
+        } else {
+          await db.update(products).set({ isHidden: !!isHidden }).where(eq(products.id, id));
+        }
+      })(),
+      3000
+    );
   } catch (err) {
     console.warn("DB toggleProductVisibility fallback to memory & disk:", err);
   }
-  return { ok: true, id, isHidden };
+  return { ok: true, id, code: targetCode, isHidden };
 }
 
 export async function deleteProduct(id: number) {
@@ -537,17 +888,17 @@ export async function resetAllStock() {
     ...p,
     qty: 0,
     packs: 0,
-    packSize: null,
     loose: 0,
     orderQty: null,
   }));
   try {
     await getDb()
       .update(products)
-      .set({ qty: 0, packs: 0, packSize: null, loose: 0, orderQty: null });
+      .set({ qty: 0, packs: 0, loose: 0, orderQty: null });
   } catch (err) {
     console.warn("DB reset fallback to memory:", err);
   }
+  saveProductsStore(memoryProducts);
 }
 
 // =============================================================================
@@ -929,9 +1280,10 @@ export async function destinationReceiveTransfer(input: {
         productId: prod.id,
         productCode: prod.code,
         productNameAr: prod.nameAr,
-        productNameEn: prod.nameEn || undefined,
+        productNameEn: prod.nameEn || "",
         branchCode: t.toBranchCode,
         author: input.receivedBy,
+        updatedBy: input.receivedBy,
         timestamp: now,
         action: "add",
         field: "qty",
@@ -950,9 +1302,10 @@ export async function destinationReceiveTransfer(input: {
         productId: prod.id,
         productCode: prod.code,
         productNameAr: prod.nameAr,
-        productNameEn: prod.nameEn || undefined,
+        productNameEn: prod.nameEn || "",
         branchCode: t.fromBranchCode,
         author: t.dispatchedBy || "موظف الفرع المرسل",
+        updatedBy: t.dispatchedBy || "موظف الفرع المرسل",
         timestamp: now,
         action: "subtract",
         field: "qty",

@@ -68,6 +68,11 @@ app.use("/api/*", async (c, next) => {
 
 // تقييد حجم البيانات المرسلة لحماية السيرفر من هجمات حجب الخدمة واستهلاك الذاكرة (DoS)
 app.use(bodyLimit({ maxSize: 10 * 1024 * 1024 }));
+// نقاط فحص صحة الخادم وإبقاء السيرفر نشطاً (Keep-Alive)
+app.get("/health", (c) => c.text("OK", 200));
+app.get("/ping", (c) => c.json({ status: "ok", time: new Date().toISOString() }, 200));
+app.get("/api/ping", (c) => c.json({ status: "ok", time: new Date().toISOString() }, 200));
+
 app.use("/api/trpc/*", async (c) => {
   return fetchRequestHandler({
     endpoint: "/api/trpc",
@@ -107,6 +112,14 @@ if (env.isProduction) {
   const port = parseInt(process.env.PORT || "3000");
   serve({ fetch: app.fetch, port }, () => {
     console.log(`Server running on http://localhost:${port}/`);
+
+    // إبقاء السيرفر نشطاً لمنع استضافة Render المجانية من الدخول في وضع الخمول
+    const targetUrl = process.env.RENDER_EXTERNAL_URL || "https://dunkin.onrender.com";
+    setInterval(() => {
+      fetch(`${targetUrl}/ping`)
+        .then(() => console.log(`[KeepAlive] Pinged ${targetUrl}/ping successfully`))
+        .catch(() => {});
+    }, 10 * 60 * 1000);
   });
 }
 

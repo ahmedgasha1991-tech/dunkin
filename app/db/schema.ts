@@ -81,8 +81,12 @@ export interface StockLog {
   delta: number;
   changeType: "increase" | "decrease" | "set";
   updatedBy: string;
+  author?: string;
   branchCode?: string;
   timestamp: string;
+  action?: string;
+  unit?: string;
+  note?: string;
 }
 
 export type Product = typeof products.$inferSelect & {

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { trpc } from "@/providers/trpc";
 import { useLanguage } from "@/providers/LanguageContext";
 import { useAuth } from "@/providers/AuthContext";
@@ -29,7 +29,7 @@ export interface GoodsReceivingModalProps {
   }>;
   submissionId?: string;
   orderTitle?: string;
-  onSuccess?: () => void;
+  onSuccess?: (data?: any) => void;
 }
 
 export function GoodsReceivingModal({
@@ -37,11 +37,11 @@ export function GoodsReceivingModal({
   onClose,
   orderItems,
   submissionId,
-  orderTitle,
+  orderTitle: _orderTitle,
   onSuccess,
 }: GoodsReceivingModalProps) {
   const { lang, t, getBranchName, getEmployeeName } = useLanguage();
-  const { session, selectedBranch, branchesList } = useAuth();
+  const { session, selectedBranch, branchesList, markSubmissionReceived } = useAuth();
   const utils = trpc.useUtils();
 
   // Initialize receiving items from order
@@ -59,13 +59,11 @@ export function GoodsReceivingModal({
     }))
   );
 
-  const [deliveryNotes, setDeliveryNotes] = useState("");
-
   const receiveMut = trpc.inventory.receiveOrder.useMutation({
-    onSuccess: (res) => {
+    onSuccess: (data) => {
       utils.inventory.list.invalidate();
       utils.inventory.stockLogs.invalidate();
-      onSuccess?.();
+      onSuccess?.(data);
       onClose();
     },
   });
@@ -75,7 +73,6 @@ export function GoodsReceivingModal({
   // Counters
   const totalOrdered = items.length;
   const fullyReceivedCount = items.filter((i) => i.status === "received_full").length;
-  const partiallyReceivedCount = items.filter((i) => i.status === "received_partial").length;
   const notReceivedCount = items.filter((i) => i.status === "not_received").length;
 
   // Actions per item
@@ -154,19 +151,29 @@ export function GoodsReceivingModal({
   const handleConfirmIntake = async () => {
     if (items.length === 0) return;
 
+    const receiverName = session?.full_name || (session?.employee_id ? `موظف #${session.employee_id}` : "موظف الاستلام");
     await receiveMut.mutateAsync({
       branchCode: selectedBranch || session?.branch_code || "1011125",
-      receivedBy: session?.full_name || "موظف الاستلام",
+      receivedBy: receiverName,
       submissionId,
       items: items.map((i) => ({
         productId: i.productId,
         productCode: i.productCode,
         orderedQty: i.orderedQty,
         receivedQty: i.receivedQty,
+        unit: i.unit,
         status: i.status,
         notes: i.notes || null,
       })),
     });
+
+    if (submissionId) {
+      await markSubmissionReceived(submissionId, {
+        receivedBy: receiverName,
+        receivedAt: new Date().toISOString(),
+        receivedItems: items,
+      });
+    }
   };
 
   const branchObj = branchesList.find((b) => b.branch_code === selectedBranch);

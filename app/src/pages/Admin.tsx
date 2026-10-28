@@ -9,7 +9,14 @@ import { AdminRequestsPanel } from "@/components/AdminRequestsPanel";
 import { ProductStockHistoryModal, formatStockDateDetails } from "@/components/ProductStockHistoryModal";
 import { getMeta } from "@/lib/catMeta";
 import { getProductImage, getCategoryFallbackImage } from "@/lib/productImages";
-import { getCachedProducts, saveCachedProducts } from "@/lib/offlineSync";
+import {
+  getCachedProducts,
+  saveCachedProducts,
+  getCachedHiddenCodes,
+  saveCachedHiddenCodes,
+  getCachedPackSizes,
+  saveCachedPackSizes,
+} from "@/lib/offlineSync";
 
 type AdminMenuTab = "products" | "branches" | "employees" | "requests" | "submissions" | "transfers";
 
@@ -50,11 +57,68 @@ export default function Admin() {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
-  // Search & Category & Visibility filter states for Products
+  // Search & Category & Visibility filter states for Products (Persisted in localStorage)
   const [search, setSearch] = useState("");
   const [selectedCat, setSelectedCat] = useState("ALL");
-  const [visibilityFilter, setVisibilityFilter] = useState<"ALL" | "VISIBLE" | "HIDDEN">("ALL");
+  const [visibilityFilter, setVisibilityFilter] = useState<"ALL" | "VISIBLE" | "HIDDEN">(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("dunkin_admin_visibility_filter");
+      if (saved === "ALL" || saved === "VISIBLE" || saved === "HIDDEN") return saved;
+    }
+    return "ALL";
+  });
+
+  const handleSetVisibilityFilter = (filter: "ALL" | "VISIBLE" | "HIDDEN") => {
+    setVisibilityFilter(filter);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("dunkin_admin_visibility_filter", filter);
+    }
+  };
+
+  // Local products state initialized from offline cache & hiddenCodes
+  const [localProducts, setLocalProducts] = useState<Product[]>(() => {
+    const cached = getCachedProducts();
+    const hiddenCodes = getCachedHiddenCodes();
+    const packSizes = getCachedPackSizes();
+    if (cached && cached.length > 0) {
+      return cached.map((p) => ({
+        ...p,
+        packSize: (p.packSize !== null && p.packSize > 0) ? p.packSize : (packSizes[p.code] ?? null),
+        isHidden: hiddenCodes.has(p.code) || !!p.isHidden,
+      }));
+    }
+    return [];
+  });
+
+  // Keep localProducts synchronized when server query succeeds without dropping hidden flags
+  useEffect(() => {
+    if (listQuery.data && listQuery.data.length > 0) {
+      const hiddenCodes = getCachedHiddenCodes();
+      const packSizes = getCachedPackSizes();
+      setLocalProducts((prev) => {
+        const merged: Product[] = listQuery.data.map((serverProd) => {
+          const local = prev.find((x) => x.id === serverProd.id || x.code === serverProd.code);
+          const isExplicitlyHidden = hiddenCodes.has(serverProd.code) || (local && local.isHidden === true ? true : !!serverProd.isHidden);
+          const effectivePackSize =
+            serverProd.packSize !== null && serverProd.packSize > 0
+              ? serverProd.packSize
+              : local?.packSize !== null && (local?.packSize ?? 0) > 0
+              ? local!.packSize
+              : packSizes[serverProd.code] ?? null;
+
+          return {
+            ...serverProd,
+            packSize: effectivePackSize,
+            isHidden: isExplicitlyHidden,
+          } as Product;
+        });
+        saveCachedProducts(merged);
+        return merged;
+      });
+    }
+  }, [listQuery.data]);
 
   const addMut = trpc.inventory.add.useMutation({
     onSuccess: () => {
@@ -64,30 +128,159 @@ export default function Admin() {
   });
 
   const editMut = trpc.inventory.edit.useMutation({
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       utils.inventory.list.invalidate();
+      if (variables.id) {
+        if (variables.isHidden !== undefined && variables.code) {
+          const hiddenCodes = getCachedHiddenCodes();
+          if (variables.isHidden) hiddenCodes.add(variables.code);
+          else hiddenCodes.delete(variables.code);
+          saveCachedHiddenCodes(hiddenCodes);
+        }
+        if (variables.packSize !== undefined && variables.code) {
+          const sizes = getCachedPackSizes();
+          if (variables.packSize) sizes[variables.code] = variables.packSize;
+          else delete sizes[variables.code];
+          saveCachedPackSizes(sizes);
+        }
+        setLocalProducts((prev) => {
+          const updated: Product[] = prev.map((p) =>
+            p.id === variables.id
+              ? ({
+                  ...p,
+                  ...variables,
+                  imageUrl: variables.imageUrl !== undefined ? (variables.imageUrl as string | null) : p.imageUrl,
+                  isHidden: variables.isHidden !== undefined ? variables.isHidden : p.isHidden,
+                  packSize: variables.packSize !== undefined ? variables.packSize : p.packSize,
+                } as Product)
+              : p
+          );
+          saveCachedProducts(updated);
+          return updated;
+        });
+      }
       setEditing(null);
     },
   });
+
+  const setPackSizeMut = trpc.inventory.setPackSize.useMutation({
+    onSuccess: (data) => {
+      utils.inventory.list.invalidate();
+      if (data?.id) {
+        if (data.code && data.packSize) {
+          const sizes = getCachedPackSizes();
+          sizes[data.code] = data.packSize;
+          saveCachedPackSizes(sizes);
+        }
+        setLocalProducts((prev) => {
+          const updated = prev.map((p) =>
+            p.id === data.id || (data.code && p.code === data.code)
+              ? { ...p, packSize: data.packSize }
+              : p
+          );
+          saveCachedProducts(updated);
+          return updated;
+        });
+      }
+    },
+  });
+
+  const handleSavePackSize = (product: Product, newPackSize: number | null) => {
+    // 1. Update cache in localStorage
+    if (product.code) {
+      const sizes = getCachedPackSizes();
+      if (newPackSize && newPackSize > 0) {
+        sizes[product.code] = newPackSize;
+      } else {
+        delete sizes[product.code];
+      }
+      saveCachedPackSizes(sizes);
+    }
+
+    // 2. Optimistic update
+    setLocalProducts((prev) => {
+      const updated = prev.map((p) =>
+        p.id === product.id || p.code === product.code
+          ? { ...p, packSize: newPackSize }
+          : p
+      );
+      saveCachedProducts(updated);
+      return updated;
+    });
+
+    // 3. Mutate backend
+    setPackSizeMut.mutate({
+      id: product.id,
+      code: product.code,
+      packSize: newPackSize,
+    });
+  };
 
   const toggleVisibilityMut = trpc.inventory.toggleVisibility.useMutation({
     onSuccess: (data) => {
       utils.inventory.list.invalidate();
       if (data?.id) {
-        const cached = getCachedProducts();
-        if (cached && cached.length > 0) {
-          const updated = cached.map((p) => (p.id === data.id ? { ...p, isHidden: data.isHidden } : p));
-          saveCachedProducts(updated);
+        const hiddenCodes = getCachedHiddenCodes();
+        if (data.isHidden && data.code) {
+          hiddenCodes.add(data.code);
+        } else if (!data.isHidden && data.code) {
+          hiddenCodes.delete(data.code);
         }
+        saveCachedHiddenCodes(hiddenCodes);
+
+        setLocalProducts((prev) => {
+          const updated = prev.map((p) =>
+            p.id === data.id || (data.code && p.code === data.code)
+              ? { ...p, isHidden: data.isHidden }
+              : p
+          );
+          saveCachedProducts(updated);
+          return updated;
+        });
       }
     },
   });
+
+  const handleToggleVisibility = (product: Product) => {
+    const nextIsHidden = !product.isHidden;
+    setTogglingId(product.id);
+
+    // 1. Immediately update hiddenCodes in localStorage
+    const hiddenCodes = getCachedHiddenCodes();
+    if (nextIsHidden) {
+      hiddenCodes.add(product.code);
+    } else {
+      hiddenCodes.delete(product.code);
+    }
+    saveCachedHiddenCodes(hiddenCodes);
+
+    // 2. Immediately update local state & cached products optimistically
+    setLocalProducts((prev) => {
+      const updated = prev.map((p) =>
+        p.id === product.id || p.code === product.code
+          ? { ...p, isHidden: nextIsHidden }
+          : p
+      );
+      saveCachedProducts(updated);
+      return updated;
+    });
+
+    // 3. Send mutation to backend with both id and code
+    toggleVisibilityMut.mutate(
+      { id: product.id, code: product.code, isHidden: nextIsHidden },
+      {
+        onSettled: () => {
+          setTogglingId(null);
+        },
+      }
+    );
+  };
 
   const removeMut = trpc.inventory.remove.useMutation({
     onSuccess: () => utils.inventory.list.invalidate(),
   });
 
-  const products = listQuery.data ?? [];
+  const products = localProducts.length > 0 ? localProducts : (listQuery.data ?? []);
   const allCategories = useMemo(() => Array.from(new Set(products.map((p) => p.category))), [products]);
   const hiddenCount = useMemo(() => products.filter((p) => !!p.isHidden).length, [products]);
   const visibleCount = useMemo(() => products.filter((p) => !p.isHidden).length, [products]);
@@ -528,7 +721,7 @@ export default function Admin() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => setVisibilityFilter("ALL")}
+                    onClick={() => handleSetVisibilityFilter("ALL")}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                       visibilityFilter === "ALL"
                         ? "bg-slate-900 text-white shadow-xs"
@@ -542,7 +735,7 @@ export default function Admin() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setVisibilityFilter("VISIBLE")}
+                    onClick={() => handleSetVisibilityFilter("VISIBLE")}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                       visibilityFilter === "VISIBLE"
                         ? "bg-emerald-600 text-white shadow-xs"
@@ -557,7 +750,7 @@ export default function Admin() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setVisibilityFilter("HIDDEN")}
+                    onClick={() => handleSetVisibilityFilter("HIDDEN")}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                       visibilityFilter === "HIDDEN"
                         ? "bg-purple-700 text-white shadow-xs"
@@ -692,6 +885,54 @@ export default function Admin() {
                                         <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
                                           {unitLabel}
                                         </span>
+
+                                        {/* Pack Capacity Badge (Clickable to edit) */}
+                                        {product.packSize && product.packSize > 0 ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const input = window.prompt(
+                                                lang === "ar"
+                                                  ? `تحديد سعة العبوة للصنف (${product.nameAr}): أدخل عدد الحبات في الباكيت أو الكرتون`
+                                                  : `Set pack capacity for (${product.nameEn}): Enter pieces per pack/carton`,
+                                                String(product.packSize)
+                                              );
+                                              if (input !== null) {
+                                                const parsed = parseInt(input.trim(), 10);
+                                                const val = !isNaN(parsed) && parsed > 0 ? parsed : null;
+                                                handleSavePackSize(product, val);
+                                              }
+                                            }}
+                                            className="font-mono text-[11px] font-black text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                                            title={lang === "ar" ? "اضغط لتعديل سعة الباكيت/الكرتون" : "Click to edit pack capacity"}
+                                          >
+                                            <i className="ph-bold ph-squares-four text-amber-600"></i>
+                                            <span>{product.packSize} حبة/عبوة</span>
+                                          </button>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const input = window.prompt(
+                                                lang === "ar"
+                                                  ? `تحديد سعة العبوة للصنف (${product.nameAr}): أدخل عدد الحبات في الباكيت أو الكرتون`
+                                                  : `Set pack capacity for (${product.nameEn}): Enter pieces per pack/carton`,
+                                                "50"
+                                              );
+                                              if (input !== null) {
+                                                const parsed = parseInt(input.trim(), 10);
+                                                if (!isNaN(parsed) && parsed > 0) {
+                                                  handleSavePackSize(product, parsed);
+                                                }
+                                              }
+                                            }}
+                                            className="text-[10.5px] font-bold text-amber-800 bg-amber-50/70 hover:bg-amber-100 border border-dashed border-amber-300 px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer transition"
+                                            title={lang === "ar" ? "اضغط لتحديد سعة الباكيت لهذا الصنف" : "Click to set pack capacity"}
+                                          >
+                                            <i className="ph-bold ph-plus-circle text-amber-600"></i>
+                                            <span>{lang === "ar" ? "تحديد سعة الباكيت" : "Set Pack Size"}</span>
+                                          </button>
+                                        )}
                                         {product.isHidden && (
                                           <span className="inline-flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 border border-purple-300">
                                             <i className="ph-bold ph-eye-slash text-xs"></i>
@@ -737,8 +978,8 @@ export default function Admin() {
                                     {/* Toggle Visibility Button */}
                                     <button
                                       type="button"
-                                      onClick={() => toggleVisibilityMut.mutate({ id: product.id, isHidden: !product.isHidden })}
-                                      disabled={toggleVisibilityMut.isPending}
+                                      onClick={() => handleToggleVisibility(product)}
+                                      disabled={togglingId === product.id || toggleVisibilityMut.isPending}
                                       className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer ${
                                         product.isHidden
                                           ? "bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100"

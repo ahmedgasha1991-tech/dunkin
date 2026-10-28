@@ -11,11 +11,15 @@ import { useAuth } from "@/providers/AuthContext";
 import { AuthModal } from "@/components/AuthModal";
 import { ProductStockHistoryModal } from "@/components/ProductStockHistoryModal";
 import { GoodsReceivingModal } from "@/components/GoodsReceivingModal";
+import { CargoOrdersModal } from "@/components/CargoOrdersModal";
 import { BranchTransferModal } from "@/components/BranchTransferModal";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import {
   saveCachedProducts,
   getCachedProducts,
+  getCachedHiddenCodes,
+  getCachedPackSizes,
+  saveCachedPackSizes,
   queueMutation,
   getQueuedMutations,
   removeQueuedMutation,
@@ -30,7 +34,7 @@ export default function Home() {
   const navigate = useNavigate();
   const utils = trpc.useUtils();
   const { lang, toggleLang, t, getProductName, getCategoryName, getUnitName, getBranchName, getEmployeeName } = useLanguage();
-  const { session, logout, selectedBranch, setSelectedBranch, branchesList, sendAdminSubmission } = useAuth();
+  const { session, logout, selectedBranch, setSelectedBranch, branchesList, sendAdminSubmission, fetchAdminSubmissions } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const listQuery = trpc.inventory.list.useQuery(undefined, {
     refetchOnWindowFocus: false,
@@ -38,7 +42,16 @@ export default function Home() {
   });
   const [items, setItems] = useState<Product[]>(() => {
     const cached = getCachedProducts();
-    return cached.length > 0 ? cached : [];
+    const hiddenCodes = getCachedHiddenCodes();
+    const packSizes = getCachedPackSizes();
+    if (cached.length > 0) {
+      return cached.map((p) => ({
+        ...p,
+        packSize: (p.packSize !== null && p.packSize > 0) ? p.packSize : (packSizes[p.code] ?? null),
+        isHidden: hiddenCodes.has(p.code) || !!p.isHidden,
+      }));
+    }
+    return [];
   });
   const [isSyncing, setIsSyncing] = useState(false);
   const [search, setSearch] = useState("");
@@ -66,10 +79,33 @@ export default function Home() {
   const [showReset, setShowReset] = useState(false);
   const [showOrder, setShowOrder] = useState(false);
   const [showReceivingModal, setShowReceivingModal] = useState(false);
+  const [showCargoOrdersModal, setShowCargoOrdersModal] = useState(false);
+  const [cargoOrdersInitialTab, setCargoOrdersInitialTab] = useState<"new" | "archive">("new");
+  const [pendingCargoOrdersCount, setPendingCargoOrdersCount] = useState(0);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
+
+  const refreshPendingCargoCount = useCallback(async () => {
+    try {
+      const subs = await fetchAdminSubmissions();
+      const currentBranch = selectedBranch || session?.branch_code || "1011125";
+      const isAdminUser = session?.role === "admin";
+      const count = subs.filter((s) => {
+        if (s.type !== "cargo_order" || s.status !== "pending") return false;
+        if (!isAdminUser && s.branch_code !== currentBranch) return false;
+        return true;
+      }).length;
+      setPendingCargoOrdersCount(count);
+    } catch {}
+  }, [fetchAdminSubmissions, selectedBranch, session?.branch_code, session?.role]);
+
+  useEffect(() => {
+    refreshPendingCargoCount();
+    const interval = setInterval(refreshPendingCargoCount, 15000);
+    return () => clearInterval(interval);
+  }, [refreshPendingCargoCount]);
 
   const transfersQuery = trpc.inventory.listTransfers.useQuery(
     { branchCode: selectedBranch || session?.branch_code },
@@ -104,26 +140,39 @@ export default function Home() {
 
   useEffect(() => {
     if (listQuery.data && listQuery.data.length > 0) {
+      const hiddenCodes = getCachedHiddenCodes();
+      const packSizes = getCachedPackSizes();
       setItems((prev) => {
         if (!prev || prev.length === 0) {
-          saveCachedProducts(listQuery.data);
-          return listQuery.data;
+          const withHidden = listQuery.data.map((p) => ({
+            ...p,
+            packSize: (p.packSize !== null && p.packSize > 0) ? p.packSize : (packSizes[p.code] ?? null),
+            isHidden: hiddenCodes.has(p.code) || !!p.isHidden,
+          }));
+          saveCachedProducts(withHidden);
+          return withHidden;
         }
         // Smart merge: preserve local non-null quantities if server returns null/empty
         const merged = listQuery.data.map((serverProd) => {
           const local = prev.find((x) => x.id === serverProd.id || x.code === serverProd.code);
-          if (local) {
-            const hasServerQty = serverProd.qty != null && serverProd.qty > 0;
-            const hasLocalQty = local.qty != null && local.qty > 0;
-            const effectiveQty = hasServerQty ? serverProd.qty : (hasLocalQty ? local.qty : serverProd.qty);
-            const effectivePacks = serverProd.packs != null ? serverProd.packs : local.packs;
-            const effectiveLoose = serverProd.loose != null ? serverProd.loose : local.loose;
-            const effectiveOrder = serverProd.orderQty != null ? serverProd.orderQty : local.orderQty;
+          const effectiveIsHidden = hiddenCodes.has(serverProd.code) || (local && local.isHidden === true ? true : !!serverProd.isHidden);
+          const effectivePackSize =
+            serverProd.packSize !== null && serverProd.packSize > 0
+              ? serverProd.packSize
+              : local?.packSize !== null && (local?.packSize ?? 0) > 0
+              ? local!.packSize
+              : packSizes[serverProd.code] ?? null;
 
-            const effectiveIsHidden = serverProd.isHidden !== undefined ? !!serverProd.isHidden : !!local.isHidden;
+          if (local) {
+            const effectiveQty = serverProd.qty !== undefined ? serverProd.qty : local.qty;
+            const effectivePacks = serverProd.packs !== undefined ? serverProd.packs : local.packs;
+            const effectiveLoose = serverProd.loose !== undefined ? serverProd.loose : local.loose;
+            // CRITICAL FIX: serverProd.orderQty === null means order is cleared! Do NOT fallback to local.orderQty!
+            const effectiveOrder = serverProd.orderQty !== undefined ? serverProd.orderQty : local.orderQty;
 
             return {
               ...serverProd,
+              packSize: effectivePackSize,
               isHidden: effectiveIsHidden,
               qty: effectiveQty,
               packs: effectivePacks,
@@ -131,13 +180,43 @@ export default function Home() {
               orderQty: effectiveOrder,
             };
           }
-          return serverProd;
+          return {
+            ...serverProd,
+            packSize: effectivePackSize,
+            isHidden: effectiveIsHidden,
+          };
         });
         saveCachedProducts(merged);
         return merged;
       });
     }
   }, [listQuery.data]);
+
+  const clearOrderMut = trpc.inventory.clearOrder.useMutation({
+    onSuccess: () => {
+      utils.inventory.list.invalidate();
+    },
+  });
+
+  const handleGoodsReceivedSuccess = useCallback((data?: any) => {
+    refreshPendingCargoCount();
+    notify(lang === "en" ? "Stock successfully received and updated! 🟢" : "تم استلام البضاعة وتوريد الكميات للمخزون الفعلي بنجاح! 🟢");
+    if (data?.products && Array.isArray(data.products)) {
+      setItems(() => {
+        const packSizes = getCachedPackSizes();
+        const hiddenCodes = getCachedHiddenCodes();
+        const updated = data.products.map((p: Product) => ({
+          ...p,
+          packSize: (p.packSize !== null && p.packSize > 0) ? p.packSize : (packSizes[p.code] ?? null),
+          isHidden: hiddenCodes.has(p.code) || !!p.isHidden,
+        }));
+        saveCachedProducts(updated);
+        return updated;
+      });
+    } else {
+      utils.inventory.list.invalidate();
+    }
+  }, [refreshPendingCargoCount, lang, utils.inventory.list]);
 
   const updateMut = trpc.inventory.update.useMutation({
     onSuccess: () => {
@@ -228,6 +307,18 @@ export default function Home() {
     setItems((prev) => {
       const updated = prev.map((p) => (p.id === id ? { ...p, ...fields } : p));
       saveCachedProducts(updated);
+      if (fields.packSize !== undefined) {
+        const current = prev.find((p) => p.id === id);
+        if (current?.code) {
+          const sizes = getCachedPackSizes();
+          if (fields.packSize && fields.packSize > 0) {
+            sizes[current.code] = fields.packSize;
+          } else {
+            delete sizes[current.code];
+          }
+          saveCachedPackSizes(sizes);
+        }
+      }
       return updated;
     });
 
@@ -381,7 +472,7 @@ export default function Home() {
     document.body.removeChild(textarea);
   };
 
-  const handleSendOrderToAdmin = async () => {
+  const handleConfirmOrder = async () => {
     if (orderedItems.length === 0) {
       notify(t("orderListEmpty"));
       return;
@@ -392,7 +483,17 @@ export default function Home() {
     const bObj = branchesList.find((b) => b.branch_code === bCode);
     const bName = bObj ? bObj.branch_name : `فرع ${bCode}`;
 
-    const res = await sendAdminSubmission({
+    const itemsToOrder = orderedItems.map((p) => ({
+      id: p.id,
+      code: p.code,
+      nameAr: p.nameAr,
+      nameEn: p.nameEn ?? undefined,
+      qty: p.orderQty ?? 1,
+      unit: getSelectedOrderUnitLabel(p.id, p.unitCode, p.unitLabel),
+    }));
+
+    // 1. Submit cargo order
+    await sendAdminSubmission({
       type: "cargo_order",
       title: lang === "en" ? "Warehouse Cargo Order" : "طلب بضاعة مستودع",
       employee_name: empName,
@@ -400,19 +501,43 @@ export default function Home() {
       branch_code: bCode,
       branch_name: bName,
       details: {
-        item_count: orderedItems.length,
-        items: orderedItems.map((p) => ({
-          code: p.code,
-          nameAr: p.nameAr,
-          nameEn: p.nameEn ?? undefined,
-          qty: p.orderQty ?? 0,
-          unit: getSelectedOrderUnitLabel(p.id, p.unitCode, p.unitLabel),
-        })),
+        item_count: itemsToOrder.length,
+        items: itemsToOrder,
       },
     });
 
-    notify(res.message);
+    // 2. Clear order quantities locally & in cache (empty the cart)
+    setItems((prev) => {
+      const cleared = prev.map((p) => (p.orderQty != null ? { ...p, orderQty: null } : p));
+      saveCachedProducts(cleared);
+      return cleared;
+    });
+
+    setOrderUnits({});
+    try {
+      localStorage.removeItem("dunkin_order_units");
+    } catch {}
+
+    // 3. Clear on server & database
+    try {
+      await clearOrderMut.mutateAsync({
+        items: itemsToOrder.map((i) => ({ id: i.id, code: i.code })),
+      });
+    } catch (err) {
+      console.warn("clearOrder fallback:", err);
+    }
+
+    // 4. Close cart modal, notify and open CargoOrdersModal
     setShowOrder(false);
+    refreshPendingCargoCount();
+    notify(
+      lang === "en"
+        ? "Order confirmed! Moved to New Orders (Awaiting Receipt) 📦"
+        : "تم تأكيد طلب المنتجات بنجاح! فرغت القائمة وانتقلت الطلبية إلى الطلبات الجديدة بانتظار الاستلام 📦"
+    );
+    setCargoOrdersInitialTab("new");
+    setShowCargoOrdersModal(true);
+    utils.inventory.list.invalidate();
   };
 
   const copyOrderText = () => {
@@ -573,22 +698,23 @@ export default function Home() {
               )}
             </button>
 
-            {/* Goods Receiving Button (Desktop/Tablet) */}
+            {/* Cargo Orders & Inflow Button (Desktop/Tablet) */}
             <button
               id="btn-goods-receiving"
               onClick={() => {
-                if (orderedItems.length === 0) {
-                  notify(lang === "en" ? "No pending ordered products to receive. Add items to order first!" : "لا توجد بضاعة في قائمة الطلبات لاستلامها حالياً! حدد كميات الطلب أولاً.");
-                  setShowOrder(true);
-                } else {
-                  setShowReceivingModal(true);
-                }
+                setCargoOrdersInitialTab("new");
+                setShowCargoOrdersModal(true);
               }}
-              className="hidden sm:flex bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition items-center gap-1.5 border border-emerald-300 text-xs shadow-2xs"
-              title={lang === "en" ? "Receive and Confirm Delivery into Stock" : "استلام المنتجات وتوريد المخزون"}
+              className="hidden sm:flex relative bg-emerald-50 text-emerald-700 hover:bg-emerald-100 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl font-bold transition items-center gap-1.5 border border-emerald-300 text-xs shadow-2xs"
+              title={lang === "en" ? "Warehouse Cargo Orders & Goods Receiving" : "طلبات البضاعة واستلام الشحنات والأرشيف"}
             >
               <i className="ph-bold ph-package-receive text-base text-emerald-600"></i>
-              <span className="hidden md:inline">{lang === "en" ? "Receive" : "استلام"}</span>
+              <span className="hidden md:inline">{lang === "en" ? "Orders & Inflow" : "الطلبات والتوريد"}</span>
+              {pendingCargoOrdersCount > 0 && (
+                <span className="bg-amber-500 text-white text-[10px] min-w-5 h-5 px-1 rounded-full flex items-center justify-center font-black animate-pulse">
+                  {pendingCargoOrdersCount}
+                </span>
+              )}
             </button>
 
             {/* Branch Transfer Workflow Button (Desktop/Tablet) */}
@@ -814,12 +940,8 @@ export default function Home() {
               {/* 3. Goods Receiving & Stock Intake */}
               <button
                 onClick={() => {
-                  if (orderedItems.length === 0) {
-                    notify(lang === "en" ? "No pending ordered products to receive. Add items to order first!" : "لا توجد بضاعة في قائمة الطلبات لاستلامها حالياً! حدد كميات الطلب أولاً.");
-                    setShowOrder(true);
-                  } else {
-                    setShowReceivingModal(true);
-                  }
+                  setCargoOrdersInitialTab("new");
+                  setShowCargoOrdersModal(true);
                   setMobileMenuOpen(false);
                 }}
                 className="w-full text-start p-3 rounded-2xl transition flex items-center justify-between gap-3 text-slate-700 hover:bg-emerald-50/60 border border-transparent hover:border-emerald-200"
@@ -830,17 +952,19 @@ export default function Home() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-black truncate text-slate-900">
-                      {lang === "ar" ? "استلام وتوريد البضاعة" : "Receive Goods"}
+                      {lang === "ar" ? "الطلبات الجديدة والتوريد والأرشيف" : "Orders & Goods Receiving"}
                     </p>
                     <p className="text-[10px] truncate text-slate-400">
-                      {lang === "ar" ? "فحص الوارد وتوريد المخزون" : "Confirm delivery into stock"}
+                      {lang === "ar" ? "متابعة الطلبات واستلام البضاعة للمخزون" : "Receive goods & manage archives"}
                     </p>
                   </div>
                 </div>
-                {orderedItems.length > 0 && (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 bg-emerald-600 text-white">
-                    {orderedItems.length}
+                {pendingCargoOrdersCount > 0 ? (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-black shrink-0 bg-amber-500 text-white animate-pulse">
+                    {pendingCargoOrdersCount}
                   </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold shrink-0 bg-slate-100 text-slate-400">0</span>
                 )}
               </button>
 
@@ -1176,6 +1300,7 @@ export default function Home() {
                   <ProductCard
                     key={p.id}
                     p={p}
+                    isAdmin={isAdmin}
                     orderUnit={orderUnits[p.id]}
                     onPatch={patch}
                     onStep={stepField}
@@ -1345,7 +1470,7 @@ export default function Home() {
               </button>
               <button
                 onClick={() => {
-                  setItems((prev) => prev.map((p) => ({ ...p, qty: null, packs: null, packSize: null, loose: null, orderQty: null })));
+                  setItems((prev) => prev.map((p) => ({ ...p, qty: null, packs: null, loose: null, orderQty: null })));
                   resetMut.mutate();
                   setShowReset(false);
                   notify(lang === "en" ? "All quantities reset" : "تم تصفير جميع الكميات");
@@ -1512,24 +1637,29 @@ export default function Home() {
               {/* Primary Actions Row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <button
-                  onClick={handleSendOrderToAdmin}
-                  disabled={orderedItems.length === 0}
+                  onClick={handleConfirmOrder}
+                  disabled={orderedItems.length === 0 || clearOrderMut.isPending}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black py-2.5 px-3 rounded-xl transition shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-[0.99]"
                 >
-                  <i className="ph-bold ph-paper-plane-tilt text-base"></i>
-                  <span>{lang === "en" ? "Send Order to Admin 🚀" : "إرسال الطلب للأدمن 🚀"}</span>
+                  <i className="ph-bold ph-check-circle text-base"></i>
+                  <span>{lang === "en" ? "Confirm Order 📦" : "تأكيد طلب المنتجات 📦"}</span>
                 </button>
                 <button
                   onClick={() => {
                     setShowOrder(false);
-                    setShowReceivingModal(true);
+                    setCargoOrdersInitialTab("new");
+                    setShowCargoOrdersModal(true);
                   }}
-                  disabled={orderedItems.length === 0}
-                  className="w-full bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-black py-2.5 px-3 rounded-xl transition shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-[0.99]"
-                  title={lang === "en" ? "Check arrived products and intake to stock" : "فحص المنتجات الواصلة وتوريدها للمخزون"}
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-black py-2.5 px-3 rounded-xl transition shadow-md shadow-amber-500/20 flex items-center justify-center gap-2 text-xs sm:text-sm active:scale-[0.99]"
+                  title={lang === "en" ? "View new orders awaiting receipt and past archives" : "عرض قائمة الطلبات الجديدة بانتظار الاستلام والأرشيف السابق"}
                 >
-                  <i className="ph-bold ph-package-receive text-base"></i>
-                  <span>{lang === "en" ? "Receive Products 📥" : "استلام المنتجات وتوريدها 📥"}</span>
+                  <i className="ph-bold ph-hourglass text-base"></i>
+                  <span>{lang === "en" ? "New Orders & Archive 📂" : "الطلبات الجديدة والأرشيف 📂"}</span>
+                  {pendingCargoOrdersCount > 0 && (
+                    <span className="bg-slate-900 text-amber-300 text-[10px] px-1.5 py-0.5 rounded-full font-mono">
+                      {pendingCargoOrdersCount}
+                    </span>
+                  )}
                 </button>
               </div>
 
@@ -1578,9 +1708,17 @@ export default function Home() {
             unitLabel: getSelectedOrderUnitLabel(p.id, p.unitCode, p.unitLabel),
             unitCode: orderUnits[p.id] || p.unitCode,
           }))}
-          onSuccess={() => {
-            notify(lang === "en" ? "Stock successfully received and updated! 🟢" : "تم استلام البضاعة وتوريد الكميات للمخزون بنجاح! 🟢");
-          }}
+          onSuccess={handleGoodsReceivedSuccess}
+        />
+      )}
+
+      {/* Cargo Orders Workflow & Archive Modal */}
+      {showCargoOrdersModal && (
+        <CargoOrdersModal
+          isOpen={showCargoOrdersModal}
+          initialTab={cargoOrdersInitialTab}
+          onClose={() => setShowCargoOrdersModal(false)}
+          onOrderReceived={handleGoodsReceivedSuccess}
         />
       )}
 
@@ -1676,6 +1814,7 @@ const TabButton = React.memo(function TabButton({ active, onClick, children }: {
 
 const ProductCard = React.memo(function ProductCard({
   p,
+  isAdmin = false,
   orderUnit,
   onPatch,
   onStep,
@@ -1684,6 +1823,7 @@ const ProductCard = React.memo(function ProductCard({
   onOpenHistory,
 }: {
   p: Product;
+  isAdmin?: boolean;
   orderUnit?: "CTN" | "PKT" | "PCS";
   onPatch: (id: number, fields: Fields, debounce?: boolean) => void;
   onStep: (p: Product, field: "qty" | "packs" | "loose", change: number) => void;
@@ -1727,7 +1867,7 @@ const ProductCard = React.memo(function ProductCard({
 
   const qtyVal = p.qty ?? 0;
   const packs = p.packs ?? 0;
-  const packSize = p.packSize ?? 0;
+  const packSize = (p.packSize !== null && p.packSize > 0) ? p.packSize : 0;
   const loose = p.loose ?? 0;
 
   let total = 0;
@@ -1737,7 +1877,7 @@ const ProductCard = React.memo(function ProductCard({
     formulaText = `(${packs} × ${packSize}) + ${loose}`;
   } else if (packs > 0) {
     total = loose;
-    formulaText = t("writeCapacity");
+    formulaText = packSize > 0 ? `${loose} ${t("pcs")}` : (isAdmin ? t("writeCapacity") : (lang === "ar" ? "بانتظار تحديد السعة من الإدارة" : "Pending pack size"));
   } else {
     total = loose;
     formulaText = `${loose} ${t("pcs")}`;
@@ -1959,7 +2099,23 @@ const ProductCard = React.memo(function ProductCard({
                 <i className="ph-bold ph-squares-four text-amber-600 text-xs"></i> {t("packSizeLabel")}:
               </span>
               <div className="flex items-center pl-0.5">
-                {numInput("packSize", "w-16 sm:w-20 py-0.5 border-amber-300 rounded-md text-amber-900 placeholder:text-[9px] placeholder:font-normal focus:border-amber-500 text-xs sm:text-sm", "", t("writeCapacity"))}
+                {isAdmin ? (
+                  <div className="flex items-center gap-1" title={lang === "ar" ? "تعديل سعة الباكيت (خاص بمدير النظام)" : "Edit pack capacity (Admin)"}>
+                    {numInput("packSize", "w-14 sm:w-16 py-0.5 border-amber-300 rounded-md text-amber-900 placeholder:text-[9px] placeholder:font-normal focus:border-amber-500 text-xs sm:text-sm font-black", "", t("writeCapacity"))}
+                    <span className="text-[9px] font-black text-amber-700 bg-amber-200/80 px-1 py-0.5 rounded shadow-2xs" title="خاص بالأدمن">👑</span>
+                  </div>
+                ) : (
+                  p.packSize && p.packSize > 0 ? (
+                    <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-100/90 border border-amber-300 text-amber-950 rounded-md font-mono font-black text-xs sm:text-sm shadow-2xs">
+                      <span>{lang === "ar" ? arNum(p.packSize) : p.packSize}</span>
+                      <span className="text-[9.5px] font-bold text-amber-800">{t("pcs")}</span>
+                    </div>
+                  ) : (
+                    <span className="text-[9px] sm:text-[9.5px] font-bold text-amber-800 bg-amber-100/70 px-1.5 py-0.5 rounded-md border border-amber-200">
+                      {lang === "ar" ? "بانتظار تحديد الإدارة" : "Pending Admin"}
+                    </span>
+                  )
+                )}
               </div>
             </div>
             <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg p-1 shadow-2xs">
@@ -2034,6 +2190,7 @@ export function AddProductModal({
     unitLabel: string;
     imageUrl?: string | null;
     qty?: number | null;
+    packSize?: number | null;
     isHidden?: boolean;
   }) => void;
   isLoading: boolean;
@@ -2044,6 +2201,7 @@ export function AddProductModal({
   const [nameAr, setNameAr] = useState(product?.nameAr ?? "");
   const [nameEn, setNameEn] = useState(product?.nameEn ?? "");
   const [initialQty, setInitialQty] = useState(product?.qty != null ? String(product.qty) : "");
+  const [packSize, setPackSize] = useState(product?.packSize != null && product.packSize > 0 ? String(product.packSize) : "");
   const [isHidden, setIsHidden] = useState(product?.isHidden ?? false);
   const [imageUrl, setImageUrl] = useState(
     product?.imageUrl || (product?.code ? getUploadedProductImage(product.code) : "") || ""
@@ -2233,6 +2391,38 @@ export function AddProductModal({
             </select>
           </div>
 
+          {/* Pack Capacity Field (Pieces in Packet/Carton) */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <i className="ph-bold ph-squares-four text-amber-600"></i>
+                <span>{lang === "en" ? "Pack Capacity (Pieces per Packet/Carton)" : "سعة الباكيت أو الكرتون (عدد الحبات في العبوة)"}</span>
+              </span>
+              <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                {lang === "en" ? "Saved for staff" : "يُحفظ ثابتاً للموظفين"}
+              </span>
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="1"
+                value={packSize}
+                onChange={(e) => setPackSize(e.target.value)}
+                placeholder={lang === "en" ? "e.g. 50 (cups in packet)" : "مثال: 50 أو 100 (عدد الأكواب أو الحبات في الباكيت)"}
+                disabled={isLoading}
+                className={fieldCls}
+              />
+              <span className={`absolute ${lang === 'ar' ? 'left-3' : 'right-3'} top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none`}>
+                {t("pcs")}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {lang === "en"
+                ? "This number is locked and saved for branch staff so they don't have to enter it repeatedly."
+                : "يحدد هذا الرقم عدد الحبات في الباكيت تلقائياً لجميع موظفي الفروع، ويمنع اختفاء السعة أثناء الجرد."}
+            </p>
+          </div>
+
           {/* Initial Stock Quantity Field */}
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">
@@ -2305,6 +2495,7 @@ export function AddProductModal({
               unitLabel: unitLabels[unitCode],
               imageUrl: imageUrl.trim() || null,
               qty: initialQty.trim() !== "" ? parseInt(initialQty, 10) : null,
+              packSize: packSize.trim() !== "" ? Math.max(1, parseInt(packSize, 10) || 1) : null,
               isHidden,
             })}
             className="flex-[2] bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2"

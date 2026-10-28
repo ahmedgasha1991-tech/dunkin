@@ -226,7 +226,10 @@ export function AdminRequestsPanel({ forcedTab, hideTabsNav = false, onCountsCha
     loadData();
   };
 
-  const handleToggleSubmissionStatus = async (id: string, currentStatus: "pending" | "reviewed") => {
+  const handleToggleSubmissionStatus = async (
+    id: string,
+    currentStatus: "pending" | "reviewed" | "received"
+  ) => {
     const nextStatus = currentStatus === "pending" ? "reviewed" : "pending";
     await markSubmissionStatus(id, nextStatus);
     notify(nextStatus === "reviewed" ? (lang === "en" ? "Marked as reviewed!" : "تم التحديد كـ تم الإطلاع!") : (lang === "en" ? "Marked as new" : "تمت الإعادة كـ جديد"));
@@ -1591,8 +1594,7 @@ export function AdminRequestsPanel({ forcedTab, hideTabsNav = false, onCountsCha
           onClose={() => setReceivingSubmission(null)}
           submissionId={receivingSubmission.id}
           orderTitle={receivingSubmission.title}
-          orderItems={receivingSubmission.details.items.map((item, idx) => ({
-            id: idx + 1,
+          orderItems={receivingSubmission.details.items.map((item) => ({
             code: item.code,
             nameAr: item.nameAr,
             nameEn: item.nameEn,
@@ -1600,7 +1602,7 @@ export function AdminRequestsPanel({ forcedTab, hideTabsNav = false, onCountsCha
             unitLabel: item.unit,
           }))}
           onSuccess={() => {
-            handleToggleSubmissionStatus(receivingSubmission.id, "pending");
+            loadData();
             setToast(lang === "en" ? "Stock intake confirmed & updated successfully!" : "تم تأكيد الاستلام وتوريد الكميات للمخزون بنجاح!");
             setTimeout(() => setToast(null), 3000);
           }}

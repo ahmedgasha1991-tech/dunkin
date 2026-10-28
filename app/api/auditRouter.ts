@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createRouter, publicQuery, publicProcedure, protectedProcedure, adminProcedure } from "./middleware";
+import { createRouter, publicQuery, publicProcedure, adminProcedure } from "./middleware";
 import {
   createAudit,
   listAudits,

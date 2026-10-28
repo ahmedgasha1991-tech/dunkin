@@ -2,7 +2,7 @@ import path from "path";
 const __dirname = import.meta.dirname;
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import devServer, { defaultOptions } from "@hono/vite-dev-server";
+import devServer from "@hono/vite-dev-server";
 
 export default defineConfig({
   plugins: [

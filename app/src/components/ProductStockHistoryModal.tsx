@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import type { Product, StockLog } from "@db/schema";
 import { useLanguage } from "@/providers/LanguageContext";
 import { trpc } from "@/providers/trpc";
@@ -38,7 +38,7 @@ export function formatStockDateDetails(isoString: string, lang: "ar" | "en" = "a
 
 export function ProductStockHistoryModal({
   product,
-  branchCode,
+  branchCode: _branchCode,
   onClose,
 }: ProductStockHistoryModalProps) {
   const { lang, getProductName, getUnitName, getCategoryName, getBranchName, getEmployeeName } = useLanguage();

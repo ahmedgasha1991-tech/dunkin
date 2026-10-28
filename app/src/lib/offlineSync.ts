@@ -2,6 +2,7 @@ import type { Product } from "@db/schema";
 
 const PRODUCTS_CACHE_KEY = "dunkin_offline_products_cache";
 const MUTATION_QUEUE_KEY = "dunkin_offline_mutation_queue";
+const HIDDEN_CODES_KEY = "dunkin_hidden_product_codes";
 
 export interface QueuedMutation {
   id: string;
@@ -19,6 +20,50 @@ export interface QueuedMutation {
   branchCode?: string;
   updatedBy: string;
   timestamp: number;
+}
+
+const PACK_SIZES_KEY = "dunkin_product_pack_sizes";
+
+export function getCachedHiddenCodes(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(HIDDEN_CODES_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function saveCachedHiddenCodes(codes: Set<string> | string[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    const arr = Array.from(codes);
+    localStorage.setItem(HIDDEN_CODES_KEY, JSON.stringify(arr));
+  } catch (err) {
+    console.warn("Failed to save hidden codes to cache:", err);
+  }
+}
+
+export function getCachedPackSizes(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(PACK_SIZES_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+export function saveCachedPackSizes(sizes: Record<string, number>): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(PACK_SIZES_KEY, JSON.stringify(sizes));
+  } catch (err) {
+    console.warn("Failed to save pack sizes to cache:", err);
+  }
 }
 
 // --- 1. Products Caching ---

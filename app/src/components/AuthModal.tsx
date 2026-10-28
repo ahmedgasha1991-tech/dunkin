@@ -15,8 +15,8 @@ export function AuthModal({ isOpen, onClose, allowClose = true }: { isOpen: bool
   const [fullName, setFullName] = useState("");
 
   // Admin Login States
-  const [adminBranchCode, setAdminBranchCode] = useState("0000000");
-  const [adminEmployeeId, setAdminEmployeeId] = useState("10001");
+  const [adminBranchCode, setAdminBranchCode] = useState("1011125");
+  const [adminEmployeeId, setAdminEmployeeId] = useState("15763");
   const [adminPin, setAdminPin] = useState("");
 
   if (!isOpen) return null;
@@ -285,7 +285,7 @@ export function AuthModal({ isOpen, onClose, allowClose = true }: { isOpen: bool
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
                   <span>{lang === "en" ? "Admin Security PIN / Password *" : "رمز الحماية السري للأدمن (PIN) *"}</span>
-                  <span className="text-[10px] text-purple-700 font-semibold">{lang === "en" ? "Required for Admin" : "مطلوب لتأكيد الصلاحية"}</span>
+                  <span className="text-[10px] text-purple-700 font-bold bg-purple-100 px-2 py-0.5 rounded-md">{lang === "en" ? "Default: 11788" : "الرمز الافتراضي: 11788"}</span>
                 </label>
                 <div className="relative">
                   <input
@@ -293,7 +293,7 @@ export function AuthModal({ isOpen, onClose, allowClose = true }: { isOpen: bool
                     required
                     value={adminPin}
                     onChange={(e) => setAdminPin(e.target.value)}
-                    placeholder="••••••"
+                    placeholder="11788"
                     autoComplete="current-password"
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-slate-900 font-bold outline-none focus:border-purple-600 focus:bg-white focus:ring-4 focus:ring-purple-600/10 transition font-mono text-sm tracking-widest"
                   />

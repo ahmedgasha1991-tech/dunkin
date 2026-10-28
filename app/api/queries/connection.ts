@@ -11,7 +11,11 @@ let client: ReturnType<typeof postgres>;
 
 export function getDb() {
   if (!instance) {
-    client = postgres(env.databaseUrl, { prepare: false });
+    client = postgres(env.databaseUrl, {
+      prepare: false,
+      connect_timeout: 3,
+      idle_timeout: 10,
+    });
     instance = drizzle(client, { schema: fullSchema });
   }
   return instance;

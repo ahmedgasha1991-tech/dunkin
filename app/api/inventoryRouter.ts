@@ -1,10 +1,11 @@
 import { z } from "zod";
-import { createRouter, publicQuery, publicProcedure, protectedProcedure, adminProcedure } from "./middleware";
+import { createRouter, publicQuery, protectedProcedure, adminProcedure } from "./middleware";
 import {
   listProducts,
   updateProduct,
   addProduct,
   editProduct,
+  setProductPackSize,
   toggleProductVisibility,
   deleteProduct,
   saveInventorySnapshot,
@@ -12,6 +13,7 @@ import {
   resetAllStock,
   getStockLogs,
   receiveOrderItems,
+  clearOrderQuantities,
   listBranchTransfers,
   createBranchTransfer,
   adminInitialApproveTransfer,
@@ -53,7 +55,13 @@ export const inventoryRouter = createRouter({
       // Auto-bind author to verified session if available
       const author = ctx.user?.fullName || updatedBy || "موظف الفرع";
       const branch = ctx.user?.branchCode || branchCode || "1011125";
-      await updateProduct(id, fields, { updatedBy: author, branchCode: branch });
+      const isAdmin = ctx.user?.role === "admin";
+      // Only admin can change packSize
+      const safeFields = {
+        ...fields,
+        ...(isAdmin ? {} : { packSize: undefined }),
+      };
+      await updateProduct(id, safeFields, { updatedBy: author, branchCode: branch });
       return { ok: true };
     }),
 
@@ -70,6 +78,8 @@ export const inventoryRouter = createRouter({
             productCode: z.string().min(1),
             orderedQty: z.number().int().min(0),
             receivedQty: z.number().int().min(0),
+            unit: z.string().optional(),
+            unitCode: z.string().optional(),
             status: z.enum(["received_full", "received_partial", "not_received"]),
             notes: z.string().nullable().optional(),
           })
@@ -85,6 +95,17 @@ export const inventoryRouter = createRouter({
         submissionId: input.submissionId,
       });
       return res;
+    }),
+
+  /** تفريغ وتصفير كميات الطلب عند تأكيد الطلبية */
+  clearOrder: protectedProcedure
+    .input(
+      z.object({
+        items: z.array(z.object({ id: z.number().optional(), code: z.string().optional() })).optional(),
+      }).optional()
+    )
+    .mutation(async ({ input }) => {
+      return await clearOrderQuantities(input?.items);
     }),
 
   /** سجل الحركات والتعديلات على المخزون - يتطلب تسجيل دخول */
@@ -105,6 +126,7 @@ export const inventoryRouter = createRouter({
         unitLabel: z.string().min(1),
         imageUrl: optionalNullableImageUrl,
         qty: z.number().int().min(0).nullable().optional(),
+        packSize: z.number().int().min(1).nullable().optional(),
         isHidden: z.boolean().optional(),
       }),
     )
@@ -127,6 +149,7 @@ export const inventoryRouter = createRouter({
         unitLabel: z.string().min(1).optional(),
         imageUrl: optionalNullableImageUrl,
         qty: z.number().int().min(0).nullable().optional(),
+        packSize: z.number().int().min(1).nullable().optional(),
         isHidden: z.boolean().optional(),
       }),
     )
@@ -136,17 +159,31 @@ export const inventoryRouter = createRouter({
       return { ok: true };
     }),
 
+  /** تحديد سعة الباكيت / الكرتون: مخصص لمدير النظام (الأدمن) فقط */
+  setPackSize: adminProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        code: z.string().optional(),
+        packSize: z.number().int().min(1).nullable(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      return await setProductPackSize(input.id, input.packSize, input.code);
+    }),
+
   /** إخفاء / إظهار المنتج للموظفين: مخصص لمدير النظام (الأدمن) فقط */
   toggleVisibility: adminProcedure
     .input(
       z.object({
         id: z.number(),
+        code: z.string().optional(),
         isHidden: z.boolean(),
       })
     )
     .mutation(async ({ input }) => {
-      await toggleProductVisibility(input.id, input.isHidden);
-      return { ok: true, id: input.id, isHidden: input.isHidden };
+      await toggleProductVisibility(input.id, input.isHidden, input.code);
+      return { ok: true, id: input.id, code: input.code, isHidden: input.isHidden };
     }),
 
   /** حذف منتج: مخصص لمدير النظام (الأدمن) فقط */
