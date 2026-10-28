@@ -1,6 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { useAuth, type EmployeeRequest, type EmployeeRecord, type BranchRecord, type AdminSubmission } from "@/providers/AuthContext";
+import {
+  useAuth,
+  type EmployeeRequest,
+  type EmployeeRecord,
+  type BranchRecord,
+  type AdminSubmission,
+  DEFAULT_BRANCHES,
+  getLocalApprovedEmployees,
+  getLocalPendingRequests,
+  getLocalSubmissions,
+  getBranchesFromStorage,
+  filterDeletedBranches,
+} from "@/providers/AuthContext";
 import { useLanguage } from "@/providers/LanguageContext";
 import { trpc } from "@/providers/trpc";
 import { generateAuditPdf } from "@/lib/auditPdfGenerator";
@@ -37,13 +49,25 @@ export function AdminRequestsPanel({ forcedTab, hideTabsNav = false, onCountsCha
     fetchAdminSubmissions,
     markSubmissionStatus,
     deleteAdminSubmission,
+    branchesList,
   } = useAuth();
   const { lang, getBranchName, getEmployeeName } = useLanguage();
 
-  const [requests, setRequests] = useState<EmployeeRequest[]>([]);
-  const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
-  const [branches, setBranches] = useState<BranchRecord[]>([]);
-  const [submissions, setSubmissions] = useState<AdminSubmission[]>([]);
+  const [requests, setRequests] = useState<EmployeeRequest[]>(() =>
+    getLocalPendingRequests().filter((r) => r.status === "pending")
+  );
+  const [employees, setEmployees] = useState<EmployeeRecord[]>(() =>
+    getLocalApprovedEmployees()
+  );
+  const [branches, setBranches] = useState<BranchRecord[]>(() => {
+    if (branchesList && branchesList.length > 0) return branchesList;
+    const fromStorage = getBranchesFromStorage();
+    const source = fromStorage !== null && fromStorage.length > 0 ? fromStorage : DEFAULT_BRANCHES;
+    return filterDeletedBranches(source);
+  });
+  const [submissions, setSubmissions] = useState<AdminSubmission[]>(() =>
+    getLocalSubmissions()
+  );
   const [selectedSubmission, setSelectedSubmission] = useState<AdminSubmission | null>(null);
   const [receivingSubmission, setReceivingSubmission] = useState<AdminSubmission | null>(null);
   const [subFilter, setSubFilter] = useState<"ALL" | "cargo_order" | "audit">("ALL");
@@ -113,24 +137,38 @@ export function AdminRequestsPanel({ forcedTab, hideTabsNav = false, onCountsCha
   const [editBranchCode, setEditBranchCode] = useState("");
   const [editBranchName, setEditBranchName] = useState("");
 
+  useEffect(() => {
+    if (branchesList && branchesList.length > 0) {
+      setBranches(branchesList);
+    }
+  }, [branchesList]);
+
   const loadData = async () => {
     setIsLoading(true);
-    const reqData = await fetchPendingRequests();
-    const empData = await fetchEmployeesList();
-    const branchData = await fetchBranchesList();
-    const subsData = await fetchAdminSubmissions();
-    setRequests(reqData);
-    setEmployees(empData);
-    setBranches(branchData);
-    setSubmissions(subsData);
-    setIsLoading(false);
+    try {
+      const [reqData, empData, branchData, subsData] = await Promise.all([
+        fetchPendingRequests(),
+        fetchEmployeesList(),
+        fetchBranchesList(),
+        fetchAdminSubmissions(),
+      ]);
 
-    onCountsChange?.({
-      pendingRequests: reqData.filter((r) => r.status === "pending").length,
-      pendingSubmissions: subsData.filter((s) => s.status === "pending").length,
-      employeesCount: empData.length,
-      branchesCount: branchData.length,
-    });
+      setRequests(reqData);
+      setEmployees(empData);
+      setBranches(branchData);
+      setSubmissions(subsData);
+
+      onCountsChange?.({
+        pendingRequests: reqData.filter((r) => r.status === "pending").length,
+        pendingSubmissions: subsData.filter((s) => s.status === "pending").length,
+        employeesCount: empData.length,
+        branchesCount: branchData.length,
+      });
+    } catch (err) {
+      console.warn("loadData error:", err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -730,9 +768,14 @@ export function AdminRequestsPanel({ forcedTab, hideTabsNav = false, onCountsCha
 
           {/* List of Branches */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {branches.map((b) => {
-              const isSelected = selectedBranch === b.branch_code;
-              const bName = getBranchName(b.branch_code, b.branch_name);
+            {branches.length === 0 ? (
+              <div className="col-span-full py-12 text-center text-slate-400 font-bold bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <i className="ph-bold ph-storefront text-3xl mb-2 block text-slate-300"></i>
+                <p>{lang === "en" ? "No branches found" : "لا توجد فروع مسجلة حالياً"}</p>
+              </div>
+            ) : branches.map((b) => {
+                const isSelected = selectedBranch === b.branch_code;
+                const bName = getBranchName(b.branch_code, b.branch_name);
               return (
                 <div
                   key={b.branch_code}

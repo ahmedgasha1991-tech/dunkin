@@ -111,7 +111,16 @@ const LOCAL_PENDING_KEY = "dunkin_local_pending_requests";
 const LOCAL_EMPLOYEES_KEY = "dunkin_local_approved_employees";
 const SUBMISSIONS_STORAGE_KEY = "dunkin_admin_submissions";
 
-const getLocalSubmissions = (): AdminSubmission[] => {
+export function withSupabaseTimeout<T>(promise: PromiseLike<T>, timeoutMs = 1200): Promise<T> {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Supabase request timed out")), timeoutMs)
+    ),
+  ]);
+}
+
+export const getLocalSubmissions = (): AdminSubmission[] => {
   if (typeof window !== "undefined") {
     try {
       const saved = localStorage.getItem(SUBMISSIONS_STORAGE_KEY);
@@ -123,7 +132,7 @@ const getLocalSubmissions = (): AdminSubmission[] => {
   return [];
 };
 
-const saveLocalSubmissions = (list: AdminSubmission[]) => {
+export const saveLocalSubmissions = (list: AdminSubmission[]) => {
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(list));
@@ -131,13 +140,13 @@ const saveLocalSubmissions = (list: AdminSubmission[]) => {
   }
 };
 
-const DEFAULT_BRANCHES: BranchRecord[] = [
+export const DEFAULT_BRANCHES: BranchRecord[] = [
   { branch_code: "1011125", branch_name: "فرع الديرة - الرياض", is_active: true },
   { branch_code: "1010001", branch_name: "فرع الرياض الرئيسي - العليا", is_active: true },
   { branch_code: "0000000", branch_name: "الإدارة العامة - النظام", is_active: true }
 ];
 
-const DEFAULT_APPROVED_EMPLOYEES: EmployeeRecord[] = [
+export const DEFAULT_APPROVED_EMPLOYEES: EmployeeRecord[] = [
   {
     id: "admin-10001",
     employee_id: "10001",
@@ -158,13 +167,13 @@ const DEFAULT_APPROVED_EMPLOYEES: EmployeeRecord[] = [
   }
 ];
 
-const saveBranchesToStorage = (list: BranchRecord[]) => {
+export const saveBranchesToStorage = (list: BranchRecord[]) => {
   if (typeof window !== "undefined") {
     localStorage.setItem(BRANCHES_STORAGE_KEY, JSON.stringify(list));
   }
 };
 
-const getBranchesFromStorage = (): BranchRecord[] | null => {
+export const getBranchesFromStorage = (): BranchRecord[] | null => {
   if (typeof window !== "undefined") {
     const saved = localStorage.getItem(BRANCHES_STORAGE_KEY);
     if (saved) {
@@ -174,7 +183,7 @@ const getBranchesFromStorage = (): BranchRecord[] | null => {
   return null;
 };
 
-const getDeletedBranchCodes = (): string[] => {
+export const getDeletedBranchCodes = (): string[] => {
   if (typeof window !== "undefined") {
     const saved = localStorage.getItem(DELETED_BRANCHES_KEY);
     if (saved) {
@@ -184,7 +193,7 @@ const getDeletedBranchCodes = (): string[] => {
   return [];
 };
 
-const addDeletedBranchCode = (code: string) => {
+export const addDeletedBranchCode = (code: string) => {
   if (typeof window !== "undefined") {
     const current = getDeletedBranchCodes();
     if (!current.includes(code)) {
@@ -194,7 +203,7 @@ const addDeletedBranchCode = (code: string) => {
   }
 };
 
-const removeDeletedBranchCode = (code: string) => {
+export const removeDeletedBranchCode = (code: string) => {
   if (typeof window !== "undefined") {
     const current = getDeletedBranchCodes();
     if (current.includes(code)) {
@@ -204,13 +213,13 @@ const removeDeletedBranchCode = (code: string) => {
   }
 };
 
-const filterDeletedBranches = (list: BranchRecord[]): BranchRecord[] => {
+export const filterDeletedBranches = (list: BranchRecord[]): BranchRecord[] => {
   const deletedCodes = getDeletedBranchCodes();
   if (deletedCodes.length === 0) return list;
   return list.filter((b) => !deletedCodes.includes(b.branch_code));
 };
 
-const getLocalPendingRequests = (): EmployeeRequest[] => {
+export const getLocalPendingRequests = (): EmployeeRequest[] => {
   if (typeof window !== "undefined") {
     try {
       const raw = localStorage.getItem(LOCAL_PENDING_KEY);
@@ -222,7 +231,7 @@ const getLocalPendingRequests = (): EmployeeRequest[] => {
   return [];
 };
 
-const saveLocalPendingRequests = (reqs: EmployeeRequest[]) => {
+export const saveLocalPendingRequests = (reqs: EmployeeRequest[]) => {
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(LOCAL_PENDING_KEY, JSON.stringify(reqs));
@@ -230,7 +239,7 @@ const saveLocalPendingRequests = (reqs: EmployeeRequest[]) => {
   }
 };
 
-const getLocalApprovedEmployees = (): EmployeeRecord[] => {
+export const getLocalApprovedEmployees = (): EmployeeRecord[] => {
   const list: EmployeeRecord[] = [...DEFAULT_APPROVED_EMPLOYEES];
   if (typeof window !== "undefined") {
     try {
@@ -250,7 +259,7 @@ const getLocalApprovedEmployees = (): EmployeeRecord[] => {
   return list;
 };
 
-const saveLocalApprovedEmployees = (emps: EmployeeRecord[]) => {
+export const saveLocalApprovedEmployees = (emps: EmployeeRecord[]) => {
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(LOCAL_EMPLOYEES_KEY, JSON.stringify(emps));
@@ -318,20 +327,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchBranchesList = async (): Promise<BranchRecord[]> => {
     const local = getBranchesFromStorage();
+    const fallbackList = filterDeletedBranches(local !== null && local.length > 0 ? local : DEFAULT_BRANCHES);
     try {
-      const { data, error } = await supabase
-        .from("branches")
-        .select("*")
-        .order("branch_code", { ascending: true });
+      const { data, error } = await withSupabaseTimeout(
+        supabase
+          .from("branches")
+          .select("*")
+          .order("branch_code", { ascending: true }),
+        1200
+      );
 
       let baseList: BranchRecord[];
 
       if (!error && data && data.length > 0) {
         baseList = data as BranchRecord[];
-      } else if (local !== null && local.length > 0) {
-        baseList = local;
       } else {
-        baseList = DEFAULT_BRANCHES;
+        baseList = fallbackList;
       }
 
       const cleanBranches = filterDeletedBranches(baseList);
@@ -339,10 +350,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       saveBranchesToStorage(cleanBranches);
       return cleanBranches;
     } catch (e) {
-      const baseList = local !== null ? local : DEFAULT_BRANCHES;
-      const cleanBranches = filterDeletedBranches(baseList);
-      setBranchesList(cleanBranches);
-      return cleanBranches;
+      setBranchesList(fallbackList);
+      return fallbackList;
     }
   };
 
@@ -596,10 +605,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchPendingRequests = async (): Promise<EmployeeRequest[]> => {
     let dbReqs: EmployeeRequest[] = [];
     try {
-      const { data, error } = await supabase
-        .from("employee_requests")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { data, error } = await withSupabaseTimeout(
+        supabase
+          .from("employee_requests")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        1200
+      );
 
       if (!error && data) {
         dbReqs = data as EmployeeRequest[];
@@ -622,10 +634,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchEmployeesList = async (): Promise<EmployeeRecord[]> => {
     let dbEmps: EmployeeRecord[] = [];
     try {
-      const { data, error } = await supabase
-        .from("employees")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { data, error } = await withSupabaseTimeout(
+        supabase
+          .from("employees")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        1200
+      );
 
       if (!error && data) {
         dbEmps = data as EmployeeRecord[];
@@ -969,10 +984,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchAdminSubmissions = async (): Promise<AdminSubmission[]> => {
     let dbList: AdminSubmission[] = [];
     try {
-      const { data, error } = await supabase
-        .from("admin_submissions")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { data, error } = await withSupabaseTimeout(
+        supabase
+          .from("admin_submissions")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        1200
+      );
       if (!error && data) {
         dbList = data as AdminSubmission[];
       }
